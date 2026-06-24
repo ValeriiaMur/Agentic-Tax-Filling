@@ -1,5 +1,8 @@
 # Deploy runbook — Railway
 
+**Live deployment: <https://agentic-tax-filling.up.railway.app/>** (health:
+`/healthz`).
+
 The app is a single FastAPI service. Railway builds it from `requirements.txt`
 and starts it with the command in `railway.json`. Target: a public URL a judge
 can open.

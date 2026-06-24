@@ -37,7 +37,9 @@ from .conversation import TaxSession
 HERE = os.path.dirname(__file__)
 STATIC = os.path.join(HERE, "..", "static")
 ASSETS = os.path.join(HERE, "..", "assets")
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join(HERE, "..", "_outputs"))
+# `or` (not a default arg) so an empty OUTPUT_DIR= in .env falls back rather than
+# becoming "" and breaking makedirs.
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR") or os.path.join(HERE, "..", "_outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = FastAPI(title="Agentic Tax-Filing Assistant", version="3.0.0")

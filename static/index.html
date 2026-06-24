@@ -3,174 +3,319 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Tax-Filing Assistant · 2025 Form 1040</title>
+<title>File your taxes · Form 1040 (2025)</title>
 <style>
-  :root { --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1f2a37;
-          --txt:#e6edf3; --mut:#8b98a8; --accent:#3b82f6; --good:#22c55e;
-          --warn:#f59e0b; --user:#1d4ed8; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-         background:var(--bg); color:var(--txt); }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex;
-           align-items:baseline; gap:12px; }
-  header h1 { font-size:16px; margin:0; font-weight:650; }
-  header .sub { color:var(--mut); font-size:13px; }
-  .wrap { display:grid; grid-template-columns:1fr 380px; gap:0; height:calc(100vh - 53px); }
-  .chat { display:flex; flex-direction:column; min-width:0; }
-  .msgs { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
-  .msg { max-width:74%; padding:10px 14px; border-radius:14px; white-space:pre-wrap; }
-  .bot { background:var(--panel); border:1px solid var(--line); align-self:flex-start;
-         border-bottom-left-radius:4px; }
-  .me { background:var(--user); align-self:flex-end; border-bottom-right-radius:4px; }
-  .msg strong { font-weight:700; }
-  .drop { margin:0 20px 10px; border:1.5px dashed var(--line); border-radius:12px;
-          padding:14px; text-align:center; color:var(--mut); cursor:pointer;
-          background:var(--panel2); transition:.15s; }
-  .drop.hot { border-color:var(--accent); color:var(--txt); background:#10233f; }
-  .drop b { color:var(--txt); }
-  .drop .sm { font-size:12px; }
-  .drop a { color:var(--accent); text-decoration:none; }
-  .composer { display:flex; gap:8px; padding:12px 20px 18px; border-top:1px solid var(--line); }
-  .composer input { flex:1; background:var(--panel); border:1px solid var(--line);
-        color:var(--txt); border-radius:10px; padding:11px 14px; font-size:15px; outline:none; }
-  .composer input:focus { border-color:var(--accent); }
-  .composer button { background:var(--accent); color:#fff; border:0; border-radius:10px;
-        padding:0 18px; font-weight:600; cursor:pointer; }
-  .composer button:disabled { opacity:.5; cursor:default; }
-  .dl { margin:0 20px 6px; }
-  .dl a { display:inline-block; background:var(--good); color:#04210f; font-weight:700;
-          padding:9px 16px; border-radius:10px; text-decoration:none; }
-  /* observation panel */
-  .obs { background:var(--panel2); border-left:1px solid var(--line); display:flex;
-         flex-direction:column; min-width:0; }
-  .obs h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase;
-            color:var(--mut); margin:0; padding:16px 16px 8px; }
-  .trail { flex:1; overflow-y:auto; padding:0 14px 16px; font:12.5px/1.5 ui-monospace,Menlo,monospace; }
-  .ev { padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:7px;
-        background:var(--panel); }
-  .ev.flag { border-color:var(--warn); }
-  .ev .top { display:flex; justify-content:space-between; color:var(--mut); }
-  .ev .ph { color:var(--accent); }
-  .ev.flag .ph { color:var(--warn); }
-  .ev .ac { color:var(--txt); margin-top:2px; }
-  .ev .de { color:var(--mut); margin-top:1px; }
-  .empty { color:var(--mut); padding:8px 4px; }
+:root{
+  --color-bg-elevated:#EBEBEE;--color-surface:#FFFFFF;
+  --color-text-primary:#1C1C22;--color-text-secondary:#6E6E76;--color-text-tertiary:#AEAEB6;
+  --color-accent:oklch(72% 0.12 265);--color-accent-fg:oklch(50% 0.16 265);
+  --color-accent-muted:oklch(95% 0.03 265);--color-accent-subtle:oklch(91% 0.05 265);
+  --color-border:rgba(0,0,0,0.07);--color-border-strong:rgba(0,0,0,0.12);--color-border-subtle:rgba(0,0,0,0.04);
+  --amber-fg:oklch(58% 0.13 65);--amber-bg:oklch(95% 0.05 75);
+  --font-sans:-apple-system,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;
+  --font-display:-apple-system,'SF Pro Display','Helvetica Neue',system-ui,sans-serif;
+  --font-mono:'SF Mono','Fira Code','Cascadia Code',monospace;
+  --radius-card:22px;
+  --shadow-sm:0 2px 8px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:0 4px 24px rgba(0,0,0,0.07),0 1px 3px rgba(0,0,0,0.04);
+  --shadow-lg:0 8px 48px rgba(0,0,0,0.10),0 1px 4px rgba(0,0,0,0.06);
+  --shadow-xl:0 16px 64px rgba(0,0,0,0.12),0 2px 6px rgba(0,0,0,0.06);
+  --glass-light:rgba(255,255,255,0.72);--blur-md:blur(12px);--blur-lg:blur(24px);
+  --spring-snappy:cubic-bezier(0.34,1.56,0.64,1);--spring-gentle:cubic-bezier(0.34,1.20,0.64,1);
+  --ease-soft:cubic-bezier(0.4,0,0.2,1);
+}
+@font-face{font-family:'Fira Code';font-weight:400;font-display:swap;
+  src:local('Fira Code'),url('https://cdn.jsdelivr.net/npm/@fontsource/fira-code@5/files/fira-code-latin-400-normal.woff2') format('woff2');}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{height:100vh;display:flex;flex-direction:column;background:var(--color-bg-elevated);
+  font-family:var(--font-sans);color:var(--color-text-primary);overflow:hidden;}
+::selection{background:var(--color-accent-subtle);}
+.scroll-y::-webkit-scrollbar{width:8px;}
+.scroll-y::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.10);border-radius:9999px;}
+.scroll-y::-webkit-scrollbar-track{background:transparent;}
+@keyframes crystallize{0%{opacity:0;transform:scale(.9) translateY(10px);filter:blur(5px);}100%{opacity:1;transform:none;filter:none;}}
+@keyframes bubbleIn{0%{opacity:0;transform:translateY(8px) scale(.98);}100%{opacity:1;transform:none;}}
+@keyframes revealLine{0%{opacity:0;transform:translateY(6px);}100%{opacity:1;transform:none;}}
+@keyframes drawerIn{0%{transform:translateX(110%);}100%{transform:translateX(0);}}
+@keyframes scrimIn{0%{opacity:0;}100%{opacity:1;}}
+@keyframes pulseDot{0%,100%{transform:scale(1);opacity:.55;}50%{transform:scale(1.35);opacity:1;}}
+@keyframes orbBreathe{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+.hov{transition:opacity 150ms var(--ease-soft),transform 120ms var(--spring-snappy);cursor:pointer;}
+.hov:hover{opacity:.85;}.hov:active{transform:scale(.97);}
+.cardhov{transition:box-shadow 200ms var(--ease-soft),transform 150ms var(--spring-gentle);cursor:pointer;}
+.cardhov:hover{box-shadow:var(--shadow-md);}.cardhov:active{transform:scale(.97);}
+input{font-family:var(--font-sans);}
 </style>
 </head>
 <body>
-<header>
-  <h1>Agentic Tax-Filing Assistant</h1>
-  <span class="sub">2025 Form 1040 · educational demo, fake data only</span>
-</header>
-<div class="wrap">
-  <div class="chat">
-    <div class="msgs" id="msgs"></div>
-    <div class="dl" id="dlBar" style="display:none">
-      <a id="dlLink" href="#">↓ Download your completed 1040 (PDF)</a>
-    </div>
-    <div class="drop" id="drop">
-      <div><b>Drop your W-2 here</b> or <a href="#" id="browse">browse</a> — photo or PDF, any W-2.</div>
-      <div class="sm">No W-2 handy? <a href="#" id="useSample">Use a sample W-2</a>.</div>
-      <input type="file" id="file" accept="image/*,application/pdf" hidden />
-    </div>
-    <div class="composer">
-      <input id="text" placeholder="Type a message, or your W-2 figures…" autocomplete="off" />
-      <button id="send">Send</button>
-    </div>
+<canvas id="orb" style="position:fixed;left:0;right:0;bottom:0;width:100%;height:520px;pointer-events:none;z-index:0;"></canvas>
+
+<div style="position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;padding:18px 26px;flex-shrink:0;">
+  <div style="display:flex;align-items:center;gap:11px;">
+    <span style="font-size:17px;color:var(--color-accent);animation:orbBreathe 4200ms var(--ease-soft) infinite;">◉</span>
+    <span style="font-size:13px;font-weight:500;letter-spacing:-0.01em;">Form 1040</span>
+    <span style="font-size:13px;color:var(--color-text-tertiary);">·</span>
+    <span style="font-size:13px;color:var(--color-text-tertiary);">tax year 2025</span>
   </div>
-  <aside class="obs">
-    <h2>Observation trail · what the agent did</h2>
-    <div class="trail" id="trail"><div class="empty">Decisions and tool calls appear here.</div></div>
-  </aside>
+  <div onclick="toggleObs()" class="hov" style="display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:9999px;background:var(--glass-light);-webkit-backdrop-filter:var(--blur-md);backdrop-filter:var(--blur-md);box-shadow:var(--shadow-sm);">
+    <span style="font-size:12px;">◇</span>
+    <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary);">Decision trail</span>
+    <span id="obsBadge" style="display:none;font-size:10px;font-weight:600;color:var(--color-surface);background:var(--color-accent);border-radius:9999px;padding:2px 7px;line-height:1;">0</span>
+  </div>
 </div>
+
+<div style="position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;">
+  <div style="width:min(720px,92%);height:100%;display:flex;flex-direction:column;min-height:0;">
+
+    <div id="idle" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding-bottom:90px;animation:crystallize 600ms var(--spring-snappy) both;">
+      <div style="font-family:var(--font-display);font-size:56px;font-weight:200;letter-spacing:-0.05em;line-height:1.05;">File your taxes</div>
+      <div style="font-size:17px;font-weight:300;color:var(--color-text-secondary);max-width:460px;line-height:1.6;margin-top:6px;">A federal Form 1040 for 2025 — just chat through it. Attach your W-2 and tell me the figures; I'll handle the math and the rules.</div>
+      <div class="hov" onclick="begin()" style="margin-top:30px;display:inline-flex;align-items:center;gap:8px;background:var(--color-text-primary);color:var(--color-surface);padding:15px 30px;border-radius:14px;font-size:15px;font-weight:500;box-shadow:var(--shadow-md);">Start the conversation <span style="font-size:14px;">→</span></div>
+      <div style="margin-top:14px;font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.06em;text-transform:uppercase;">~2 minutes · your figures never leave this screen</div>
+    </div>
+
+    <div id="chat" style="display:none;flex:1;flex-direction:column;min-height:0;">
+      <div id="stepper" style="display:flex;align-items:center;justify-content:center;gap:0;padding:6px 0 14px;flex-shrink:0;"></div>
+      <div id="transcript" class="scroll-y" style="flex:1;overflow-y:auto;min-height:0;padding:6px 4px 16px;display:flex;flex-direction:column;gap:14px;"></div>
+      <div id="chips" style="display:flex;gap:8px;flex-wrap:wrap;padding:0 4px 8px;flex-shrink:0;"></div>
+      <div style="flex-shrink:0;padding:2px 4px 20px;">
+        <div style="display:flex;align-items:center;gap:10px;background:var(--color-surface);border-radius:9999px;padding:8px 10px 8px 8px;box-shadow:var(--shadow-md);">
+          <label class="hov" title="Attach your W-2" style="width:38px;height:38px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            <input id="file" type="file" accept="image/*,application/pdf" hidden />
+          </label>
+          <input id="text" type="text" placeholder="Type your answer…" autocomplete="off" onkeydown="if(event.key==='Enter')sendText()" style="flex:1;border:none;outline:none;background:transparent;font-size:14.5px;font-weight:300;color:var(--color-text-primary);caret-color:var(--color-accent);"/>
+          <span onclick="sendText()" class="hov" style="font-size:14px;color:var(--color-text-tertiary);padding:0 8px;">↵</span>
+        </div>
+        <div id="hint" style="margin:8px 8px 0;font-size:11px;color:var(--color-text-tertiary);">Attach your W-2 with the clip, or just type your answer.</div>
+        <div id="toast" style="display:none;margin:9px 8px 0;align-items:center;gap:9px;animation:bubbleIn 360ms var(--spring-gentle) both;">
+          <span style="font-size:12px;color:var(--amber-fg);">⚠</span>
+          <span id="toastText" style="font-size:12.5px;color:var(--color-text-secondary);line-height:1.5;"></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="drawer" style="display:none;"></div>
+
 <script>
-let SID = null;
-const $ = id => document.getElementById(id);
-const msgs = $('msgs');
+const $=s=>document.getElementById(s);
+const state={sid:null,phase:'idle',observations:[],obsOpen:false,reviewShown:false,result:null,pdfReady:false};
+function api(p,b){return fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());}
+function el(t,s,h){const e=document.createElement(t);if(s)e.style.cssText=s;if(h!=null)e.innerHTML=h;return e;}
+function tx(t,s,x){const e=document.createElement(t);if(s)e.style.cssText=s;if(x!=null)e.textContent=x;return e;}
+function mdBold(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<strong style="font-weight:600">$1</strong>');}
+function scrollDown(){const t=$('transcript');setTimeout(()=>{t.scrollTop=t.scrollHeight;},60);}
 
-function mdBold(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
-  .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); }
-
-function addMsg(text, who){
-  const d = document.createElement('div');
-  d.className = 'msg ' + (who==='me'?'me':'bot');
-  d.innerHTML = mdBold(text);
-  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+function agentBubble(text,sub){
+  const w=el('div','align-self:flex-start;max-width:84%;animation:bubbleIn 420ms var(--spring-gentle) both;');
+  w.appendChild(el('div','background:var(--color-surface);border-radius:20px 20px 20px 6px;padding:14px 18px;box-shadow:var(--shadow-sm);font-size:15px;line-height:1.55;letter-spacing:-0.005em;',mdBold(text)));
+  if(sub)w.appendChild(tx('div','padding:7px 6px 0 4px;font-size:12.5px;color:var(--color-text-tertiary);line-height:1.5;',sub));
+  $('transcript').appendChild(w);scrollDown();
+}
+function userBubble(text){
+  $('transcript').appendChild(tx('div','align-self:flex-end;max-width:80%;background:var(--color-text-primary);color:var(--color-surface);border-radius:20px 20px 6px 20px;padding:12px 18px;font-size:14.5px;line-height:1.5;box-shadow:var(--shadow-sm);animation:bubbleIn 420ms var(--spring-gentle) both;',text));
+  scrollDown();
+}
+function fileTurn(name,meta,imgUrl){
+  const w=el('div','align-self:flex-end;max-width:80%;display:flex;flex-direction:column;align-items:flex-end;gap:8px;animation:bubbleIn 420ms var(--spring-gentle) both;');
+  if(imgUrl){const im=el('img','max-height:170px;border-radius:14px;box-shadow:var(--shadow-sm);');im.src=imgUrl;w.appendChild(im);}
+  const chip=el('div','display:flex;align-items:center;gap:10px;background:var(--color-surface);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow-sm);');
+  chip.appendChild(el('span','width:28px;height:28px;border-radius:8px;background:var(--color-accent-muted);color:var(--color-accent-fg);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;','◇'));
+  const m2=el('div');m2.appendChild(tx('div','font-size:13px;font-weight:500;',name));m2.appendChild(tx('div','font-size:11px;color:var(--color-text-tertiary);',meta));
+  chip.appendChild(m2);w.appendChild(chip);
+  $('transcript').appendChild(w);scrollDown();
+}
+function computingBubble(){
+  const b=el('div','align-self:flex-start;display:flex;align-items:center;gap:13px;background:var(--color-surface);border-radius:20px;padding:14px 18px;box-shadow:var(--shadow-sm);animation:bubbleIn 420ms var(--spring-gentle) both;');
+  b.appendChild(el('span','width:11px;height:11px;border-radius:50%;background:var(--color-accent);animation:pulseDot 1100ms var(--ease-soft) infinite;'));
+  b.appendChild(tx('span','font-size:14px;color:var(--color-text-secondary);','Calculating your return…'));
+  b.id='computing';$('transcript').appendChild(b);scrollDown();return b;
 }
 
-function renderTrail(obs){
-  const box = $('trail');
-  if(!obs || !obs.length){ return; }
-  box.innerHTML = '';
-  obs.forEach(o=>{
-    const d = document.createElement('div');
-    d.className = 'ev' + (o.flag?' flag':'');
-    d.innerHTML = `<div class="top"><span class="ph">${o.icon||'·'} ${o.phase}</span>`
-      + `<span>${o.confText||''}</span></div>`
-      + `<div class="ac">${o.action}</div><div class="de">${o.detail}</div>`;
-    box.appendChild(d);
-  });
-  box.scrollTop = box.scrollHeight;
-}
-
-function apply(snap){
-  if(snap.assistant_message) addMsg(snap.assistant_message,'bot');
-  renderTrail(snap.observations);
-  if(snap.pdf_ready){
-    $('dlBar').style.display = 'block';
-    $('dlLink').href = '/api/download/' + SID;
+function reviewCard(r){
+  const c=el('div','align-self:stretch;background:var(--color-surface);border-radius:var(--radius-card);padding:24px 26px;box-shadow:var(--shadow-lg);animation:crystallize 520ms var(--spring-snappy) both;');
+  const head=el('div','display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;');
+  const ht=el('div');
+  ht.appendChild(tx('div','font-family:var(--font-display);font-size:20px;font-weight:300;letter-spacing:-0.02em;','Form 1040'));
+  ht.appendChild(tx('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:3px;','U.S. Individual Income Tax Return · '+r.statusLabel));
+  head.appendChild(ht);
+  head.appendChild(tx('span','font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-accent-fg);background:var(--color-accent-muted);padding:5px 10px;border-radius:9999px;','tax year 2025'));
+  c.appendChild(head);
+  const rows=el('div');c.appendChild(rows);
+  $('transcript').appendChild(c);scrollDown();
+  let i=0;
+  (function step(){
+    if(i>=r.lines.length){banner();return;}
+    const ln=r.lines[i++];
+    const row=el('div','display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--color-border);animation:revealLine 280ms var(--spring-gentle) both;');
+    const left=el('span','display:flex;align-items:baseline;gap:11px;');
+    left.appendChild(tx('span','font-family:var(--font-mono);font-size:10.5px;color:var(--color-text-tertiary);min-width:26px;',ln.line));
+    left.appendChild(tx('span','font-size:13px;color:var(--color-text-secondary);',ln.label));
+    row.appendChild(left);
+    row.appendChild(tx('span','font-family:var(--font-mono);font-size:13.5px;font-weight:500;',ln.value));
+    rows.appendChild(row);scrollDown();
+    setTimeout(step,165);
+  })();
+  function banner(){
+    const b=el('div','display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:18px 20px;border-radius:16px;background:var(--color-accent-muted);animation:crystallize 420ms var(--spring-snappy) both;');
+    const bl=el('div');
+    bl.appendChild(tx('div','font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-accent-fg);',r.outcomeLabel));
+    bl.appendChild(tx('div','font-size:12px;color:var(--color-text-tertiary);margin-top:3px;',(r.isRefund?'Refund of ':'Balance due of ')+r.outcomeAmount));
+    b.appendChild(bl);
+    b.appendChild(tx('div','font-family:var(--font-display);font-size:34px;font-weight:200;letter-spacing:-0.03em;color:var(--color-accent-fg);',r.outcomeAmount));
+    c.appendChild(b);
+    const dl=el('div','margin-top:16px;text-align:center;background:var(--color-text-primary);color:var(--color-surface);padding:13px;border-radius:14px;font-size:14px;font-weight:500;','<span style="margin-right:6px;">↓</span> Download return (PDF)');
+    dl.className='hov';dl.onclick=()=>{window.location='/api/download/'+state.sid;};
+    c.appendChild(dl);scrollDown();
   }
 }
 
-async function jpost(url, body){
-  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)});
-  return r.json();
+function renderStepper(){
+  const steps=['Interview','Review','File'];let active=state.result?2:0;
+  const box=$('stepper');box.innerHTML='';
+  steps.forEach((s,i)=>{
+    const done=i<active,on=i===active;
+    if(i>0)box.appendChild(el('div','width:26px;height:1px;background:var(--color-border-strong);margin:0 6px;'));
+    const wrap=el('div','display:flex;align-items:center;gap:7px;');
+    wrap.appendChild(tx('span','width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;'+
+      (done?'background:var(--color-accent);color:#fff;':on?'background:var(--color-text-primary);color:#fff;':'background:var(--color-border-subtle);color:var(--color-text-tertiary);'),done?'✓':String(i+1)));
+    wrap.appendChild(tx('span','font-size:12px;font-weight:500;color:'+((done||on)?'var(--color-text-primary)':'var(--color-text-tertiary)')+';',s));
+    box.appendChild(wrap);
+  });
 }
 
-async function start(){
-  const snap = await jpost('/api/session',{});
-  SID = snap.session_id;
-  apply(snap);
+function renderChips(){
+  const box=$('chips');box.innerHTML='';let chips=[];
+  if(state.phase==='await_w2')chips=[['Use a sample W-2','__sample__']];
+  else if(state.phase==='confirm_w2')chips=[["Yes, that's right",'yes'],['No, fix a number','no']];
+  else if(state.phase==='filing_status')chips=[['Single','single'],['Married filing jointly','married filing jointly'],['Head of household','head of household']];
+  else if(state.phase==='dependents')chips=[['None','none'],['1','1'],['2','2'],['3','3']];
+  else if(state.phase==='complete')chips=[["What's my refund?","what's my refund?"],['Which deduction?','which deduction did I take?']];
+  chips.forEach(([label,val])=>{
+    const c=tx('div','background:var(--color-surface);border-radius:9999px;padding:9px 15px;box-shadow:var(--shadow-sm);font-size:13px;font-weight:500;',label);
+    c.className='cardhov';
+    c.onclick=()=>{if(val==='__sample__')useSample();else submitText(val,label);};
+    box.appendChild(c);
+  });
+  $('hint').textContent=state.phase==='complete'?'Ask me anything about your 1040.':'Attach your W-2 with the clip, or just type your answer.';
 }
 
+const PHASE_ORDER=['Session','Input','Vision','Reasoning','Calculation','Decision','Guardrail'];
+const PHASE_COLOR={Session:'var(--color-text-tertiary)',Input:'var(--color-accent-fg)',Vision:'var(--color-accent-fg)',Reasoning:'var(--color-accent-fg)',Calculation:'var(--color-accent-fg)',Decision:'var(--color-text-primary)',Guardrail:'var(--amber-fg)'};
+function renderObs(obs){
+  if(obs)state.observations=obs;
+  const n=state.observations.length,b=$('obsBadge');
+  b.textContent=n;b.style.display=n>0?'inline-block':'none';
+  if(state.obsOpen)drawDrawer();
+}
+function toggleObs(){state.obsOpen=!state.obsOpen;drawDrawer();}
+function drawDrawer(){
+  const d=$('drawer');
+  if(!state.obsOpen){d.style.display='none';d.innerHTML='';return;}
+  d.style.display='block';d.innerHTML='';
+  const scrim=el('div','position:fixed;inset:0;z-index:8;background:rgba(20,20,28,0.18);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:scrimIn 280ms var(--ease-soft) both;');
+  scrim.onclick=toggleObs;d.appendChild(scrim);
+  const p=el('div','position:fixed;top:0;right:0;bottom:0;z-index:9;width:min(410px,92%);background:var(--glass-light);-webkit-backdrop-filter:var(--blur-lg);backdrop-filter:var(--blur-lg);box-shadow:var(--shadow-xl);display:flex;flex-direction:column;animation:drawerIn 480ms var(--spring-snappy) both;border-radius:32px 0 0 32px;');
+  const head=el('div','display:flex;align-items:center;justify-content:space-between;padding:26px 26px 14px;');
+  const ht=el('div');
+  ht.appendChild(tx('div','font-family:var(--font-display);font-size:19px;font-weight:300;letter-spacing:-0.02em;','Decision trail'));
+  ht.appendChild(tx('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:3px;','Every observation, rule, and choice the agent made.'));
+  head.appendChild(ht);
+  const x=tx('span','font-size:15px;color:var(--color-text-tertiary);cursor:pointer;padding:4px 8px;','✕');x.onclick=toggleObs;head.appendChild(x);
+  p.appendChild(head);
+  const list=el('div','flex:1;overflow-y:auto;padding:4px 22px 28px;');list.className='scroll-y';
+  if(state.observations.length===0)
+    list.appendChild(tx('div','padding:40px 8px;text-align:center;font-size:13px;color:var(--color-text-tertiary);line-height:1.6;','Nothing yet. Each step the agent takes will appear here.'));
+  const groups={};state.observations.forEach(o=>{(groups[o.phase]=groups[o.phase]||[]).push(o);});
+  PHASE_ORDER.forEach(ph=>{
+    const items=groups[ph];if(!items)return;
+    const gh=el('div','display:flex;align-items:center;gap:8px;margin:16px 0 6px;');
+    gh.appendChild(tx('span','width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;background:'+(ph==='Guardrail'?'var(--amber-bg)':'var(--color-accent-muted)')+';color:'+(PHASE_COLOR[ph]||'var(--color-text-tertiary)')+';',items[0].icon||'·'));
+    gh.appendChild(tx('span','font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:'+(PHASE_COLOR[ph]||'var(--color-text-tertiary)')+';',ph));
+    gh.appendChild(tx('span','font-size:10px;color:var(--color-text-tertiary);','· '+items.length));
+    list.appendChild(gh);
+    items.forEach(o=>{
+      const r=el('div','padding:9px 0 9px 28px;border-bottom:1px solid var(--color-border-subtle);');
+      const top=el('div','display:flex;justify-content:space-between;gap:8px;');
+      top.appendChild(tx('span','font-size:13px;font-weight:500;letter-spacing:-0.005em;',o.action));
+      if(o.confText)top.appendChild(tx('span','font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary);flex-shrink:0;',o.confText));
+      r.appendChild(top);
+      r.appendChild(tx('div','font-size:12px;color:var(--color-text-secondary);line-height:1.5;margin-top:3px;',o.detail));
+      list.appendChild(r);
+    });
+  });
+  p.appendChild(list);d.appendChild(p);
+}
+
+function apply(snap){
+  if(snap.phase){state.phase=snap.phase;setOrb(snap.phase);}
+  if(snap.assistant_message)agentBubble(snap.assistant_message);
+  if(snap.observations)renderObs(snap.observations);
+  if(snap.pdf_ready)state.pdfReady=true;
+  if(snap.result&&!state.reviewShown){
+    state.reviewShown=true;state.result=snap.result;
+    const c=$('computing');if(c)c.remove();
+    setOrb('review');setTimeout(()=>reviewCard(snap.result),220);
+  }
+  renderStepper();renderChips();
+}
+async function begin(){
+  const snap=await api('/api/session',{});state.sid=snap.session_id;
+  $('idle').style.display='none';$('chat').style.display='flex';apply(snap);
+}
 async function sendText(){
-  const t = $('text').value.trim();
-  if(!t || !SID) return;
-  $('text').value=''; addMsg(t,'me');
-  apply(await jpost('/api/message',{session_id:SID, message:t}));
+  const t=$('text').value.trim();if(!t||!state.sid)return;$('text').value='';submitText(t,t);
 }
-
-async function uploadFile(f){
-  if(!f || !SID) return;
-  addMsg('📎 Uploading '+f.name+'…','me');
-  const fd = new FormData(); fd.append('session_id',SID); fd.append('file',f);
-  const r = await fetch('/api/w2',{method:'POST',body:fd});
-  apply(await r.json());
+async function submitText(value,label){
+  $('toast').style.display='none';userBubble(label);
+  if(state.phase==='dependents')setTimeout(()=>{if(!$('computing'))computingBubble();},350);
+  apply(await api('/api/message',{session_id:state.sid,message:value}));
 }
-
 async function useSample(){
-  if(!SID) return;
-  addMsg('📎 Using the sample W-2','me');
-  apply(await jpost('/api/sample',{session_id:SID}));
+  userBubble('Use the sample W-2');apply(await api('/api/sample',{session_id:state.sid}));
 }
+async function uploadFile(f){
+  if(!f||!state.sid)return;
+  const meta=(f.type.includes('pdf')?'PDF':'Image')+' · '+Math.max(1,Math.round(f.size/1024))+' KB';
+  fileTurn(f.name,meta,f.type.startsWith('image/')?URL.createObjectURL(f):null);
+  const fd=new FormData();fd.append('session_id',state.sid);fd.append('file',f);
+  const r=await fetch('/api/w2',{method:'POST',body:fd});apply(await r.json());
+}
+$('file').addEventListener('change',e=>{if(e.target.files[0])uploadFile(e.target.files[0]);});
 
-// wire up
-$('send').onclick = sendText;
-$('text').addEventListener('keydown', e=>{ if(e.key==='Enter') sendText(); });
-$('browse').onclick = e=>{ e.preventDefault(); $('file').click(); };
-$('file').onchange = e=>{ if(e.target.files[0]) uploadFile(e.target.files[0]); };
-$('useSample').onclick = e=>{ e.preventDefault(); useSample(); };
-
-const drop = $('drop');
-['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{
-  e.preventDefault(); drop.classList.add('hot'); }));
-['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{
-  e.preventDefault(); drop.classList.remove('hot'); }));
-drop.addEventListener('drop', e=>{
-  const f = e.dataTransfer.files[0]; if(f) uploadFile(f); });
-
-start();
+const orb={r:{pos:150,vel:0,target:150},op:{pos:.9,vel:0,target:.9},t:0};
+const ORB_TARGET={idle:{r:165,op:1.0},await_w2:{r:150,op:.92},confirm_w2:{r:140,op:.82},filing_status:{r:140,op:.82},dependents:{r:140,op:.82},review:{r:150,op:.9},complete:{r:120,op:.7}};
+function setOrb(stage){const t=ORB_TARGET[stage]||ORB_TARGET.idle;orb.r.target=t.r;orb.op.target=t.op;}
+function spring(s,dt,k=42,d=12){const a=-k*(s.pos-s.target)-d*s.vel;s.vel+=a*dt;s.pos+=s.vel*dt;return s.pos;}
+(function(){
+  const cv=$('orb');const ctx=cv.getContext('2d');let last=null;
+  const resize=()=>{cv.width=window.innerWidth;cv.height=520;};resize();window.addEventListener('resize',resize);
+  function frame(ts){
+    const dt=Math.min((ts-(last||ts))/1000,.033);last=ts;orb.t+=dt;const t=orb.t;
+    let R=spring(orb.r,dt),O=spring(orb.op,dt);
+    R=R*(1+Math.sin(t*0.55)*0.06);O=O*(0.82+Math.sin(t*0.55+0.4)*0.18);
+    const W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+    if(!isFinite(R)||R<=0){requestAnimationFrame(frame);return;}
+    const cx=W/2,cy=H;
+    let g=ctx.createRadialGradient(cx,cy,0,cx,cy,R*2.4);
+    g.addColorStop(0,'oklch(70% 0.17 264 / '+(O*0.32)+')');
+    g.addColorStop(0.5,'oklch(78% 0.12 266 / '+(O*0.10)+')');
+    g.addColorStop(1,'oklch(86% 0.08 266 / 0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,R*2.4,0,Math.PI*2);ctx.fill();
+    g=ctx.createRadialGradient(cx,cy,0,cx,cy,R);
+    g.addColorStop(0,'oklch(66% 0.19 264 / '+(O*0.95)+')');
+    g.addColorStop(0.35,'oklch(70% 0.17 265 / '+(O*0.6)+')');
+    g.addColorStop(0.7,'oklch(76% 0.14 266 / '+(O*0.22)+')');
+    g.addColorStop(1,'oklch(82% 0.10 266 / 0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.fill();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
 </script>
 </body>
 </html>

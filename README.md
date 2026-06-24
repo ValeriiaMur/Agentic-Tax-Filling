@@ -1,5 +1,9 @@
 # Agentic Tax-Filing Assistant — 2025 Form 1040
 
+**▶ Live demo: <https://agentic-tax-filling.up.railway.app/>** — try it: drop in a
+W-2 (or click *Use a sample W-2*), answer two short questions, and download the
+completed 1040. The right-hand panel shows the agent's live decision trail.
+
 A small **agentic harness** that helps a single-W-2 wage earner (~$40k) file a
 U.S. federal **2025 Form 1040** through a warm, ≤5-question chat — and hands back
 the completed, downloadable IRS PDF.

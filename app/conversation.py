@@ -42,6 +42,7 @@ from .guardrails import (
     parse_filing_status,
     validate_w2_payload,
 )
+from .humanize import humanize
 from .observability import ObservationLog
 from .schemas import Form1040Result, TaxpayerInfo, W2
 from .tools import ToolRegistry
@@ -152,7 +153,7 @@ class TaxSession:
     # ── snapshot returned to the UI each turn ──────────────────────────────
     def snapshot(self, assistant_message: str, **extra) -> dict:
         base = {
-            "assistant_message": assistant_message,
+            "assistant_message": humanize(assistant_message),
             "phase": self.phase.value,
             "questions_asked": self.budget.asked,
             "questions_remaining": self.budget.remaining,
