@@ -21,18 +21,19 @@ _P2 = "topmostSubform[0].Page2[0]."
 
 # Logical name -> fully-qualified AcroForm field name.
 FIELD_MAP: Dict[str, str] = {
-    # identity (page 1)
-    "first_name": _P1 + "f1_01[0]",
-    "last_name": _P1 + "f1_02[0]",
-    "ssn": _P1 + "f1_03[0]",
-    "spouse_first": _P1 + "f1_04[0]",
-    "spouse_last": _P1 + "f1_05[0]",
-    "spouse_ssn": _P1 + "f1_06[0]",
-    "address": _P1 + "f1_11[0]",
-    "apt": _P1 + "f1_12[0]",
-    "city": _P1 + "f1_14[0]",
-    "state": _P1 + "f1_15[0]",
-    "zip": _P1 + "f1_16[0]",
+    # identity (page 1) — field rects matched to the printed labels: the name
+    # row sits below its labels at y~684, address at y~636, city/state/zip y~612.
+    "first_name": _P1 + "f1_14[0]",
+    "last_name": _P1 + "f1_15[0]",
+    "ssn": _P1 + "f1_16[0]",
+    "spouse_first": _P1 + "f1_17[0]",
+    "spouse_last": _P1 + "f1_18[0]",
+    "spouse_ssn": _P1 + "f1_19[0]",
+    "address": _P1 + "f1_20[0]",
+    "apt": _P1 + "f1_21[0]",
+    "city": _P1 + "f1_22[0]",
+    "state": _P1 + "f1_23[0]",
+    "zip": _P1 + "f1_24[0]",
     # filing status radio + digital assets
     "filing_status_radio": _P1 + "c1_8[0]",
     "digital_assets_no": _P1 + "c1_10[1]",
