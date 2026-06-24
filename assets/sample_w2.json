@@ -4,6 +4,8 @@
   "employer_name": "Brightline Coffee Roasters LLC",
   "box1_wages": 42000.0,
   "box2_federal_withholding": 4200.0,
+  "box3_ss_wages": 42000.0,
+  "box4_ss_tax": 2604.0,
   "box16_state_wages": 42000.0,
   "box17_state_withholding": 1180.0
 }

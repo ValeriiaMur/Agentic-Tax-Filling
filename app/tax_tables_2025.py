@@ -92,3 +92,6 @@ BRACKETS = {
 # The IRS Tax Table is used for taxable income below this threshold; above it, the
 # Tax Computation Worksheet (continuous bracket formula) applies.
 TAX_TABLE_CEILING = 100_000
+
+# 2025 Child Tax Credit per qualifying child (simplified; capped at tax owed).
+CHILD_TAX_CREDIT = 2_200

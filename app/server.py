@@ -1,8 +1,8 @@
-"""FastAPI app: web chat, W-2 upload, observation trail, and 1040 download.
+"""FastAPI app for the Malleable-UI tax assistant.
 
-State is held per session in-memory (a dict of session_id -> TaxAgent). For a
-single-instance prototype this is the simplest thing that demonstrates the
-chat-loop pillar; a production system would use a shared store.
+Drives the design's stage machine via discrete endpoints. All data — W-2 figures,
+the five questions, the computed return, and the decision trail — is produced
+here on the server; the browser holds none of it hardcoded.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from .agent import TaxAgent
+from .conversation import QUESTIONS, TaxSession
 
 HERE = os.path.dirname(__file__)
 STATIC = os.path.join(HERE, "..", "static")
@@ -22,29 +22,35 @@ ASSETS = os.path.join(HERE, "..", "assets")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join(HERE, "..", "_outputs"))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-app = FastAPI(title="Agentic Tax-Filing Assistant", version="1.0.0")
-
-_SESSIONS: dict[str, TaxAgent] = {}
-
-GREETING = (
-    "Hi! I'm here to help you fill out your 2025 federal tax return (Form 1040) "
-    "from your W-2. It only takes a couple of minutes and a few questions. "
-    "To begin, upload your W-2 (photo or PDF) or just type in your Box 1 wages "
-    "and Box 2 federal withholding.\n\n"
-    "(This is an educational demo with fake data — not tax advice or a real filing.)"
-)
+app = FastAPI(title="Agentic Tax-Filing Assistant", version="2.0.0")
+_SESSIONS: dict[str, TaxSession] = {}
 
 
-def _get_agent(session_id: str) -> TaxAgent:
-    agent = _SESSIONS.get(session_id)
-    if agent is None:
+def _get(session_id: str) -> TaxSession:
+    s = _SESSIONS.get(session_id)
+    if s is None:
         raise HTTPException(status_code=404, detail="Unknown session")
-    return agent
+    return s
 
 
-class MessageIn(BaseModel):
+class SidIn(BaseModel):
     session_id: str
-    message: str
+
+
+class UploadIn(SidIn):
+    messy: bool = False
+
+
+class ConfirmIn(SidIn):
+    box1_override: float | None = None
+
+
+class AnswerIn(SidIn):
+    value: object
+
+
+class CommandIn(SidIn):
+    text: str
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -61,53 +67,77 @@ def health():
 @app.post("/api/session")
 def new_session():
     sid = uuid.uuid4().hex[:12]
-    _SESSIONS[sid] = TaxAgent(sid, OUTPUT_DIR)
-    _SESSIONS[sid].obs.emit("state", "session_started")
-    return {"session_id": sid, "greeting": GREETING}
+    _SESSIONS[sid] = TaxSession(sid, OUTPUT_DIR)
+    return {"session_id": sid}
 
 
-@app.post("/api/message")
-def message(body: MessageIn):
-    agent = _get_agent(body.session_id)
-    return JSONResponse(agent.handle_message(body.message))
+@app.get("/api/questions")
+def questions():
+    """The five questions, with all tax figures sourced from the backend."""
+    return {"questions": QUESTIONS}
 
 
-@app.post("/api/w2")
-async def upload_w2(
+@app.post("/api/begin")
+def begin(body: SidIn):
+    return JSONResponse(_get(body.session_id).begin())
+
+
+@app.post("/api/upload")
+async def upload(
     session_id: str = Form(...),
-    text: str = Form(default=""),
+    messy: bool = Form(default=False),
     file: UploadFile | None = File(default=None),
 ):
-    agent = _get_agent(session_id)
+    s = _get(session_id)
     if file is not None:
         content = await file.read()
-        media = file.content_type or "image/png"
-        return JSONResponse(agent.ingest_w2(image_bytes=content, media_type=media))
-    if text.strip():
-        return JSONResponse(agent.ingest_w2(text=text))
-    raise HTTPException(status_code=400, detail="Provide a W-2 file or text.")
+        return JSONResponse(s.upload(bool(messy), image_bytes=content,
+                                     media_type=file.content_type or "image/png"))
+    return JSONResponse(s.upload(bool(messy)))
 
 
-@app.get("/api/events/{session_id}")
-def events(session_id: str):
-    agent = _get_agent(session_id)
-    return {"events": agent.obs.as_list()}
+@app.post("/api/upload-json")
+def upload_json(body: UploadIn):
+    """Sample/messy demo buttons (no file) — figures come from the backend fixture."""
+    return JSONResponse(_get(body.session_id).upload(bool(body.messy)))
+
+
+@app.post("/api/confirm")
+def confirm(body: ConfirmIn):
+    return JSONResponse(_get(body.session_id).confirm(box1_override=body.box1_override))
+
+
+@app.post("/api/answer")
+def answer(body: AnswerIn):
+    return JSONResponse(_get(body.session_id).answer(body.value))
+
+
+@app.post("/api/finalize")
+def finalize(body: SidIn):
+    return JSONResponse(_get(body.session_id).finalize())
+
+
+@app.post("/api/command")
+def command(body: CommandIn):
+    return JSONResponse(_get(body.session_id).command(body.text))
+
+
+@app.get("/api/observations/{session_id}")
+def observations(session_id: str):
+    s = _get(session_id)
+    return {"observations": s.obs.trail(), "obs_count": s.obs.trail_count}
 
 
 @app.get("/api/download/{session_id}")
 def download(session_id: str):
-    agent = _get_agent(session_id)
-    if not agent.pdf_path or not os.path.exists(agent.pdf_path):
+    s = _get(session_id)
+    if not s.pdf_path or not os.path.exists(s.pdf_path):
         raise HTTPException(status_code=404, detail="No completed form yet.")
-    return FileResponse(
-        agent.pdf_path, media_type="application/pdf",
-        filename="Form_1040_2025_completed.pdf",
-    )
+    return FileResponse(s.pdf_path, media_type="application/pdf",
+                        filename="Form_1040_2025.pdf")
 
 
-@app.get("/api/sample-w2")
-def sample_w2():
-    path = os.path.join(ASSETS, "sample_w2.png")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="No sample available.")
-    return FileResponse(path, media_type="image/png", filename="sample_w2.png")
+@app.post("/api/reset")
+def reset(body: SidIn):
+    _get(body.session_id).reset()
+    return {"ok": True}

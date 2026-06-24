@@ -18,6 +18,8 @@ GROUND_TRUTH = {
     "employer_name": "Brightline Coffee Roasters LLC",
     "box1_wages": 42000.00,
     "box2_federal_withholding": 4200.00,
+    "box3_ss_wages": 42000.00,
+    "box4_ss_tax": 2604.00,
     "box16_state_wages": 42000.00,
     "box17_state_withholding": 1180.00,
 }

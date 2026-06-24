@@ -86,10 +86,15 @@ def compute_1040(w2: W2, info: TaxpayerInfo) -> Form1040Result:
 
     tax, method = compute_tax(line_15_taxable, filing_status)
 
-    line_22 = tax  # no credits in this profile
-    line_24_total_tax = line_22  # no other taxes
+    # Child Tax Credit: $2,200 per qualifying child, capped at the tax owed
+    # (simplified, non-refundable model appropriate to this profile).
+    ctc = min(tax, int(info.num_dependents) * T.CHILD_TAX_CREDIT)
+    line_22 = max(0, tax - ctc)
+    line_24_total_tax = line_22  # no other taxes in this profile
+
+    est = _round_half_up(info.est_payments)
     line_25d = withholding
-    line_33_payments = line_25d
+    line_33_payments = line_25d + est
 
     overpaid = max(0, line_33_payments - line_24_total_tax)
     amount_owed = max(0, line_24_total_tax - line_33_payments)
@@ -103,10 +108,12 @@ def compute_1040(w2: W2, info: TaxpayerInfo) -> Form1040Result:
         line_12_standard_deduction=std_deduction,
         line_15_taxable_income=line_15_taxable,
         line_16_tax=tax,
+        line_19_ctc=ctc,
         line_22_tax_after_credits=line_22,
         line_24_total_tax=line_24_total_tax,
         line_25a_w2_withholding=withholding,
         line_25d_total_withholding=line_25d,
+        line_26_est_payments=est,
         line_33_total_payments=line_33_payments,
         line_34_overpaid=overpaid,
         line_35a_refund=overpaid,

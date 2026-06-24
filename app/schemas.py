@@ -23,6 +23,8 @@ class W2(BaseModel):
     box2_federal_withholding: float = Field(
         default=0.0, ge=0, description="Box 2 - federal income tax withheld"
     )
+    box3_ss_wages: Optional[float] = Field(default=None, ge=0)
+    box4_ss_tax: Optional[float] = Field(default=None, ge=0)
     box16_state_wages: Optional[float] = Field(default=None, ge=0)
     box17_state_withholding: Optional[float] = Field(default=None, ge=0)
 
@@ -50,6 +52,9 @@ class TaxpayerInfo(BaseModel):
     spouse_last_name: str = ""
     spouse_ssn: str = ""
     num_dependents: int = Field(default=0, ge=0, le=4)
+    est_payments: float = Field(default=0.0, ge=0, description="2025 estimated tax paid")
+    deduction_method: str = Field(default="standard")  # standard | itemized (falls back)
+    other_income: bool = Field(default=False)  # declared non-W-2 income (unsupported)
 
     @field_validator("filing_status")
     @classmethod
@@ -73,10 +78,12 @@ class Form1040Result(BaseModel):
     line_12_standard_deduction: int = 0
     line_15_taxable_income: int = 0
     line_16_tax: int = 0
+    line_19_ctc: int = 0
     line_22_tax_after_credits: int = 0
     line_24_total_tax: int = 0
     line_25a_w2_withholding: int = 0
     line_25d_total_withholding: int = 0
+    line_26_est_payments: int = 0
     line_33_total_payments: int = 0
     line_34_overpaid: int = 0
     line_35a_refund: int = 0

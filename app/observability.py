@@ -30,12 +30,66 @@ class Event:
         return time.strftime("%H:%M:%S", time.localtime(self.ts))
 
 
+# Decision-trail phase -> (icon glyph, is-accent). Flagged entries override color.
+PHASE_ICONS = {
+    "Session": "◉",
+    "Vision": "◇",
+    "Reasoning": "·",
+    "Calculation": "=",
+    "Decision": "✓",
+    "Guardrail": "!",
+}
+
+
+@dataclass
+class TrailEntry:
+    """A decision-trail observation shaped for the UI (phase/action/detail/conf/flag)."""
+    seq: int
+    phase: str
+    action: str
+    detail: str
+    conf: float | None = None
+    flag: bool = False
+
+
 class ObservationLog:
-    """Per-session event recorder. Cheap, in-memory, JSON-serializable."""
+    """Per-session event recorder. Cheap, in-memory, JSON-serializable.
+
+    Two layers: low-level `emit` events (for logs) and the user-facing
+    decision `trail` (phase/action/detail/conf/flag) shown in the UI drawer.
+    """
 
     def __init__(self, session_id: str):
         self.session_id = session_id
         self._events: List[Event] = []
+        self._trail: List[TrailEntry] = []
+
+    def observe(self, phase: str, action: str, detail: str,
+                conf: float | None = None, flag: bool = False) -> TrailEntry:
+        """Append a decision-trail entry and mirror it to the structured log."""
+        entry = TrailEntry(seq=len(self._trail) + 1, phase=phase, action=action,
+                           detail=detail, conf=conf, flag=flag)
+        self._trail.append(entry)
+        self.emit("guardrail" if flag else "decision", f"{phase}:{action}",
+                  detail=detail, conf=conf, flag=flag)
+        return entry
+
+    def trail(self) -> List[Dict[str, Any]]:
+        """Decision-trail entries shaped for the UI drawer."""
+        out = []
+        for e in self._trail:
+            out.append({
+                "seq": e.seq, "phase": e.phase, "action": e.action, "detail": e.detail,
+                "conf": e.conf,
+                "confText": (f"{round(e.conf * 100)}%" if e.conf is not None else ""),
+                "flag": e.flag,
+                "icon": PHASE_ICONS.get(e.phase, "·"),
+            })
+        return out
+
+    @property
+    def trail_count(self) -> int:
+        return len(self._trail)
 
     def emit(self, kind: str, label: str, **data: Any) -> Event:
         ev = Event(seq=len(self._events) + 1, ts=time.time(), kind=kind, label=label, data=data)
