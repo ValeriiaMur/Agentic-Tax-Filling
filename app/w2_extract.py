@@ -59,13 +59,18 @@ def parse_w2_text(text: str) -> dict:
     return out
 
 
+# Privacy: we deliberately do NOT ask the model to read or return the SSN.
+# Only the figures and name/employer needed to prepare the return are extracted;
+# the SSN is never pulled from the vision path. (The uploaded image still
+# contains it — see the Security section of the README.)
 _VISION_PROMPT = (
     "You are reading a U.S. Form W-2. Extract ONLY these fields and return strict "
-    "JSON with these keys: employee_name (string), employee_ssn (string), "
-    "employer_name (string), box1_wages (number), box2_federal_withholding (number), "
+    "JSON with these keys: employee_name (string), employer_name (string), "
+    "box1_wages (number), box2_federal_withholding (number), "
     "box16_state_wages (number or null), box17_state_withholding (number or null). "
-    "Use numbers without commas or dollar signs. Do not guess; if a field is not "
-    "visible, use null. Return JSON only, no prose."
+    "Do NOT read, infer, or return the Social Security number or any other "
+    "identifier. Use numbers without commas or dollar signs. Do not guess; if a "
+    "field is not visible, use null. Return JSON only, no prose."
 )
 
 
@@ -108,6 +113,10 @@ def _coerce_vision_json(raw: str) -> dict:
     if not m:
         raise ValueError(f"Vision model did not return JSON: {raw[:200]}")
     data = json.loads(m.group(0))
+    # Privacy belt-and-suspenders: never keep an SSN from the vision path even if
+    # the model returns one despite the prompt.
+    for k in ("employee_ssn", "ssn"):
+        data.pop(k, None)
     # normalize numbers
     for k in ("box1_wages", "box2_federal_withholding", "box16_state_wages",
               "box17_state_withholding"):

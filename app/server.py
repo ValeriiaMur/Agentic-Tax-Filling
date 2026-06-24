@@ -18,9 +18,11 @@ from __future__ import annotations
 import os
 import uuid
 
+from typing import Optional
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 # Load .env before importing modules that read env at import time (e.g. VISION_MODEL
 # in w2_extract) and before any request reads ANTHROPIC_API_KEY for Claude vision.
@@ -54,8 +56,16 @@ def _get(session_id: str) -> TaxSession:
 
 
 class MessageIn(BaseModel):
-    session_id: str
-    message: str
+    # `session_id` is optional: a missing/unknown one auto-starts a session.
+    # `text` is accepted as an alias for `message` — both name the user's turn.
+    session_id: Optional[str] = None
+    message: Optional[str] = None
+    text: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _coalesce_message(self) -> "MessageIn":
+        self.message = (self.message or self.text or "").strip()
+        return self
 
 
 class SidIn(BaseModel):
@@ -73,11 +83,16 @@ def health():
     return {"ok": True, "sessions": len(_SESSIONS)}
 
 
-@app.post("/api/session")
-def new_session():
+def _start_session() -> tuple[str, TaxSession]:
     sid = uuid.uuid4().hex[:12]
     s = TaxSession(sid, OUTPUT_DIR)
     _SESSIONS[sid] = s
+    return sid, s
+
+
+@app.post("/api/session")
+def new_session():
+    sid, s = _start_session()
     snap = s.begin()
     snap["session_id"] = sid
     return JSONResponse(snap)
@@ -85,7 +100,14 @@ def new_session():
 
 @app.post("/api/message")
 def message(body: MessageIn):
-    return JSONResponse(_get(body.session_id).message(body.message))
+    sid = body.session_id
+    s = _SESSIONS.get(sid) if sid else None
+    if s is None:  # missing or unknown session — start a fresh one transparently
+        sid, s = _start_session()
+        s.begin()  # seed the scope-lock observation, discard the greeting snapshot
+    snap = s.message(body.message)
+    snap["session_id"] = sid  # echo it back so the caller can keep using it
+    return JSONResponse(snap)
 
 
 @app.post("/api/w2")

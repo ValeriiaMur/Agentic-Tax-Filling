@@ -15,6 +15,10 @@ ASSETS = os.path.join(HERE, "..", "assets")
 GROUND_TRUTH = {
     "employee_name": "Jordan A Rivera",
     "employee_ssn": "123-45-6789",
+    "employee_address": "100 Main St",
+    "employee_city": "Austin",
+    "employee_state": "TX",
+    "employee_zip": "78701",
     "employer_name": "Brightline Coffee Roasters LLC",
     "box1_wages": 42000.00,
     "box2_federal_withholding": 4200.00,

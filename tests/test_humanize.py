@@ -6,7 +6,7 @@ changes a dollar amount must be rejected in favor of the deterministic text.
 
 import os
 
-from app.humanize import _multiset_subset, humanize
+from app.humanize import _mask, _multiset_subset, humanize
 
 
 def test_no_key_returns_original(monkeypatch):
@@ -33,3 +33,24 @@ def test_number_preservation_guard():
 
 def test_empty_message_returns_original():
     assert humanize("") == ""
+
+
+def test_name_is_masked_before_sending():
+    msg = "Thanks, Jordan Rivera! I read **$42,000** in wages."
+    masked, holders = _mask(msg, ["Jordan Rivera", "Jordan"])
+    # the real name must not appear in what would be sent to the model
+    assert "Jordan" not in masked
+    assert "$42,000" in masked  # figures are untouched
+    # and it restores exactly
+    restored = masked
+    for ph, term in holders.items():
+        restored = restored.replace(ph, term)
+    assert restored == msg
+
+
+def test_vision_path_drops_ssn():
+    from app.w2_extract import _coerce_vision_json
+    raw = '{"employee_name":"A B","employee_ssn":"123-45-6789","box1_wages":42000}'
+    data = _coerce_vision_json(raw)
+    assert "employee_ssn" not in data and "ssn" not in data
+    assert data["box1_wages"] == 42000.0

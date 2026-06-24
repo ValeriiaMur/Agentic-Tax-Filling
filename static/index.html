@@ -170,7 +170,10 @@ function reviewCard(r){
     c.appendChild(b);
     const dl=el('div','margin-top:16px;text-align:center;background:var(--color-text-primary);color:var(--color-surface);padding:13px;border-radius:14px;font-size:14px;font-weight:500;','<span style="margin-right:6px;">↓</span> Download return (PDF)');
     dl.className='hov';dl.onclick=()=>{window.location='/api/download/'+state.sid;};
-    c.appendChild(dl);scrollDown();
+    c.appendChild(dl);
+    const over=tx('div','margin-top:12px;text-align:center;font-size:12px;color:var(--color-text-tertiary);cursor:pointer;','Start over');
+    over.className='hov';over.onclick=startOver;
+    c.appendChild(over);scrollDown();
   }
 }
 
@@ -277,6 +280,15 @@ async function submitText(value,label){
 }
 async function useSample(){
   userBubble('Use the sample W-2');apply(await api('/api/sample',{session_id:state.sid}));
+}
+async function startOver(){
+  if(state.sid){try{await api('/api/reset',{session_id:state.sid});}catch(e){}}
+  state.sid=null;state.phase='idle';state.observations=[];state.obsOpen=false;
+  state.reviewShown=false;state.result=null;state.pdfReady=false;
+  $('transcript').innerHTML='';$('chips').innerHTML='';$('stepper').innerHTML='';
+  $('toast').style.display='none';$('drawer').style.display='none';$('drawer').innerHTML='';
+  renderObs([]);setOrb('idle');
+  $('chat').style.display='none';$('idle').style.display='flex';
 }
 async function uploadFile(f){
   if(!f||!state.sid)return;

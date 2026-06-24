@@ -5,12 +5,15 @@ every number and the tax computation. This layer only **re-phrases** that messag
 so it sounds warm, human, and a little different each time — never changing a
 figure, the question, or the meaning.
 
+Privacy: the only PII that could appear in an outgoing message is the taxpayer's
+name. We **mask it locally before the call** (replace with a neutral placeholder)
+and **restore it after**, so the person's name is never sent to the model. Tax
+math, SSNs, and addresses never reach this layer at all.
+
 Safety (the "within our guardrails" part):
   * Every dollar amount in the original MUST appear verbatim in the rewrite, or we
-    discard the rewrite and return the deterministic text. The LLM can reword, not
-    re-number.
-  * No new tax claims/advice are allowed (instructed) and the rewrite is length-
-    bounded.
+    discard the rewrite and return the deterministic text.
+  * No new tax claims/advice (instructed); the rewrite is length-bounded.
   * Any error, missing key, or failed check → silent fallback to the template, so
     the conversation never breaks and works offline with no key.
 
@@ -32,6 +35,7 @@ _SYSTEM = (
     "HARD RULES:\n"
     "- Preserve every dollar amount, number, percentage, box reference (e.g. 'Box 1'), "
     "and line reference (e.g. 'line 12') EXACTLY as written.\n"
+    "- Keep any placeholder token like ⟦NAME0⟧ EXACTLY as-is; do not translate or remove it.\n"
     "- Keep any **bold** markdown exactly around the same values.\n"
     "- Ask the SAME question and keep the SAME meaning. Do not add new facts, numbers, "
     "or any tax/financial advice. Do not remove a disclaimer if one is present.\n"
@@ -40,13 +44,35 @@ _SYSTEM = (
 )
 
 
-def humanize(message: str) -> str:
-    """Return a warm, varied rewrite of `message`, or `message` itself on any doubt."""
+def _mask(message: str, terms) -> tuple[str, dict]:
+    """Replace PII `terms` in `message` with neutral placeholders.
+
+    Returns (masked_message, holders) where holders maps placeholder -> original.
+    Longer terms are masked first so a full name is replaced before its first name.
+    """
+    holders: dict = {}
+    masked = message
+    uniq = sorted({t for t in (terms or []) if t and t in message}, key=len, reverse=True)
+    for i, term in enumerate(uniq):
+        ph = f"⟦NAME{i}⟧"
+        holders[ph] = term
+        masked = masked.replace(term, ph)
+    return masked, holders
+
+
+def humanize(message: str, redact_terms=None) -> str:
+    """Return a warm, varied rewrite of `message`, or `message` itself on any doubt.
+
+    `redact_terms` are PII strings (e.g. the taxpayer's name) masked before the
+    model call and restored afterward, so they are never transmitted.
+    """
     if not message or os.environ.get("LLM_PHRASING", "1") == "0":
         return message
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return message
+
+    masked, holders = _mask(message, redact_terms)
     try:
         import anthropic
 
@@ -57,7 +83,7 @@ def humanize(message: str) -> str:
             max_tokens=400,
             temperature=1.0,  # variety run-to-run
             system=_SYSTEM,
-            messages=[{"role": "user", "content": message}],
+            messages=[{"role": "user", "content": masked}],
         )
         out = "".join(
             p.text for p in resp.content if getattr(p, "type", "") == "text"
@@ -67,10 +93,14 @@ def humanize(message: str) -> str:
 
     if not out:
         return message
+    # Restore any masked PII locally.
+    for ph, term in holders.items():
+        out = out.replace(ph, term)
+    # If the model invented or left a stray placeholder we can't resolve, bail out.
+    if "⟦NAME" in out:
+        return message
     # Guardrail: no dollar amount may be dropped or altered.
-    original_amounts = _DOLLAR.findall(message)
-    rewritten_amounts = _DOLLAR.findall(out)
-    if not _multiset_subset(original_amounts, rewritten_amounts):
+    if not _multiset_subset(_DOLLAR.findall(message), _DOLLAR.findall(out)):
         return message
     # Length sanity — reject runaway rewrites.
     if len(out) > max(420, int(len(message) * 2.2)):

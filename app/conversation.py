@@ -57,6 +57,7 @@ class Phase(str, Enum):
     CONFIRM_W2 = "confirm_w2"
     FILING_STATUS = "filing_status"
     DEPENDENTS = "dependents"
+    IDENTITY = "identity"
     COMPLETE = "complete"
 
 
@@ -119,6 +120,39 @@ def _extract_w2_corrections(text: str) -> dict:
     return out
 
 
+_US_STATE_ZIP = re.compile(r"\b([A-Za-z]{2})\s*,?\s*(\d{5}(?:-\d{4})?)\b")
+
+
+def _parse_identity(text: str) -> dict:
+    """Best-effort parse of 'Name, Street, City, ST ZIP' from one free-text reply.
+
+    Stores only what it can read; the 1040 header fills with whatever is found.
+    The first comma-separated chunk is the name; a 'ST 12345' tail gives state/zip.
+    """
+    out: dict = {}
+    raw = text.strip()
+    if not raw:
+        return out
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if parts:
+        out["employee_name"] = parts[0]
+    m = _US_STATE_ZIP.search(raw)
+    if m:
+        out["employee_state"] = m.group(1).upper()
+        out["employee_zip"] = m.group(2)
+    # chunks after the name, minus any that is purely the state/zip tail
+    body = [c for c in parts[1:] if not _US_STATE_ZIP.fullmatch(c)]
+    street = next((c for c in body if re.search(r"\d", c)), "")
+    if street:
+        out["employee_address"] = street
+        rest = [c for c in body if c != street]
+        if rest:
+            out["employee_city"] = rest[-1]
+    elif body:
+        out["employee_city"] = body[-1]
+    return out
+
+
 def _parse_dependents(text: str) -> tuple[int, bool]:
     """Return (num_dependents, capped). Caps at 4 for this prototype's CTC model."""
     low = text.lower()
@@ -152,8 +186,12 @@ class TaxSession:
 
     # ── snapshot returned to the UI each turn ──────────────────────────────
     def snapshot(self, assistant_message: str, **extra) -> dict:
+        # Mask the taxpayer's name before any phrasing call so it's never sent to
+        # the model (restored locally afterward). See app/humanize.py.
+        _name = str(self.w2.get("employee_name", "") or "").strip()
+        _redact = [t for t in [_name, _name.split()[0] if _name else ""] if t]
         base = {
-            "assistant_message": humanize(assistant_message),
+            "assistant_message": humanize(assistant_message, redact_terms=_redact),
             "phase": self.phase.value,
             "questions_asked": self.budget.asked,
             "questions_remaining": self.budget.remaining,
@@ -251,6 +289,8 @@ class TaxSession:
             return self._turn_filing_status(text)
         if self.phase == Phase.DEPENDENTS:
             return self._turn_dependents(text)
+        if self.phase == Phase.IDENTITY:
+            return self._turn_identity(text)
         return self._turn_complete(text)
 
     def _turn_await_w2(self, text: str) -> dict:
@@ -286,6 +326,17 @@ class TaxSession:
                 "Great, thank you. One quick thing so I use the right standard "
                 "deduction: what's your filing status — single, married filing "
                 "jointly, married filing separately, or head of household?")
+
+        # The user skipped the yes/no and answered the next question outright
+        # (e.g. "single"). Take that as implicit acceptance of the figures I read
+        # — no dispute, no number to change — and move straight on rather than
+        # nagging for a confirmation we don't actually need.
+        if parse_filing_status(text) is not None:
+            self.obs.observe("Reasoning", "W-2 confirmed",
+                             "Figures accepted as read; taxpayer moved ahead to "
+                             "filing status.", conf=0.95)
+            self.phase = Phase.FILING_STATUS
+            return self._turn_filing_status(text)
 
         # A "no" with no number, or anything ambiguous: ask for the right figure.
         if not self._record_question():
@@ -337,6 +388,26 @@ class TaxSession:
         if capped:
             detail += " (Capped at 4 for this prototype.)"
         self.obs.observe("Reasoning", "Dependents", detail, conf=0.97)
+
+        # If the W-2 didn't carry a name (e.g. the user typed figures), ask for the
+        # name + address so the 1040 header is complete — but only if there's
+        # budget for it. Otherwise compute with what we have.
+        if not self._has_identity() and self._record_question():
+            self.phase = Phase.IDENTITY
+            return self.snapshot(
+                "Almost done — what name and address should go on the form? "
+                "Something like “Jordan Rivera, 100 Main St, Austin, TX 78701”.")
+        return self._finalize_return()
+
+    def _has_identity(self) -> bool:
+        return bool(str(self.w2.get("employee_name", "")).strip())
+
+    def _turn_identity(self, text: str) -> dict:
+        ident = _parse_identity(text)
+        self.w2.update(ident)
+        got = ident.get("employee_name") or "your details"
+        self.obs.observe("Input", "Taxpayer identity",
+                         f"Name/address captured for the 1040 header ({got}).", conf=0.96)
         return self._finalize_return()
 
     def _turn_complete(self, text: str) -> dict:
@@ -381,14 +452,25 @@ class TaxSession:
 
     # ── compute + fill PDF via the LangGraph pipeline ───────────────────────
     def _build_taxpayer(self) -> TaxpayerInfo:
-        name = str(self.w2.get("employee_name", "") or "")
-        parts = name.split(" ")
+        # Identity comes straight off the W-2. The 1040 puts "first name and
+        # middle initial" in one box and the last name in another, so everything
+        # except the final token is the first/MI field.
+        name = str(self.w2.get("employee_name", "") or "").strip()
+        parts = name.split()
+        if len(parts) >= 2:
+            first, last = " ".join(parts[:-1]), parts[-1]
+        else:
+            first, last = (parts[0] if parts else ""), ""
         return TaxpayerInfo(
             filing_status=self.info.get("filing_status") or T.SINGLE,
             num_dependents=int(self.info.get("num_dependents", 0) or 0),
-            first_name=parts[0] if parts else "",
-            last_name=" ".join(parts[1:]) if len(parts) > 1 else "",
+            first_name=first,
+            last_name=last,
             ssn=self.w2.get("employee_ssn", ""),
+            address=self.w2.get("employee_address", ""),
+            city=self.w2.get("employee_city", ""),
+            state=self.w2.get("employee_state", ""),
+            zip_code=self.w2.get("employee_zip", ""),
         )
 
     def _build_w2(self) -> W2:

@@ -124,6 +124,37 @@ tests/                57 tests incl. IRS-verified tax values & full E2E
 
 See `DECISIONS.md` for the key design choices and why.
 
+## Security & privacy
+
+What leaves the server for the LLM, and what doesn't:
+
+- **Tax math, SSN, and address never reach the model.** All computation is
+  deterministic Python; the SSN is captured server-side and written only into the
+  downloaded PDF — it is never logged, never in the decision trail, and never sent
+  to Anthropic.
+- **Vision (W-2 upload) — SSN-minimized.** If a user uploads a W-2 image/PDF, the
+  document is sent to Claude vision to read the figures. The prompt explicitly
+  instructs the model **not to read or return the SSN**, and any SSN field is
+  stripped from the response as a belt-and-suspenders step (`app/w2_extract.py`).
+  The uploaded image itself still contains the SSN, so this path does transmit the
+  document to Anthropic — paste/sample paths avoid that entirely.
+- **Phrasing — name is masked.** The optional Claude phrasing layer
+  (`app/humanize.py`) only rewrites the agent's outgoing sentences. Before any
+  call, the taxpayer's name is replaced with a neutral placeholder and restored
+  locally afterward, so **no name is transmitted** — only dollar amounts and the
+  question wording. A post-check rejects any rewrite that alters a figure.
+- **Prompt-injection safety.** W-2 content and user messages are treated as
+  untrusted: tools return structured fields only, and tax math runs in code, so
+  injected text can't change a computed number or the form.
+- **Keys & data handling.** `ANTHROPIC_API_KEY` is read from the environment only
+  (never committed/logged). Set `LLM_PHRASING=0` to disable model phrasing
+  entirely, or omit the key to run fully offline (paste/sample + deterministic
+  wording). Review Anthropic's API data-use policy for how uploaded content is
+  handled on their side.
+
+> This is a fake-data prototype — no real PII should be entered. The notes above
+> describe the architecture for when real data would flow.
+
 ## Disclaimer
 
 Educational/hackathon exercise only. Not tax advice, not for real filings, and
