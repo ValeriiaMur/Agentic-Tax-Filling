@@ -9,6 +9,7 @@ fill the *real* government form, so the download is a genuine 2025 Form 1040.
 from __future__ import annotations
 
 import os
+import re
 from typing import Dict
 
 from pypdf import PdfReader, PdfWriter
@@ -29,11 +30,12 @@ FIELD_MAP: Dict[str, str] = {
     "spouse_first": _P1 + "f1_17[0]",
     "spouse_last": _P1 + "f1_18[0]",
     "spouse_ssn": _P1 + "f1_19[0]",
-    "address": _P1 + "f1_20[0]",
-    "apt": _P1 + "f1_21[0]",
-    "city": _P1 + "f1_22[0]",
-    "state": _P1 + "f1_23[0]",
-    "zip": _P1 + "f1_24[0]",
+    # address block lives under the Address_ReadOrder subform
+    "address": _P1 + "Address_ReadOrder[0].f1_20[0]",
+    "apt": _P1 + "Address_ReadOrder[0].f1_21[0]",
+    "city": _P1 + "Address_ReadOrder[0].f1_22[0]",
+    "state": _P1 + "Address_ReadOrder[0].f1_23[0]",
+    "zip": _P1 + "Address_ReadOrder[0].f1_24[0]",
     # filing status radio + digital assets
     "filing_status_radio": _P1 + "c1_8[0]",
     "digital_assets_no": _P1 + "c1_10[1]",
@@ -124,7 +126,8 @@ def fill_1040(
     text_values = {
         FIELD_MAP["first_name"]: info.first_name,
         FIELD_MAP["last_name"]: info.last_name,
-        FIELD_MAP["ssn"]: info.ssn,
+        # SSN box is a 9-cell comb field — digits only, no dashes.
+        FIELD_MAP["ssn"]: re.sub(r"\D", "", info.ssn or ""),
         FIELD_MAP["address"]: info.address,
         FIELD_MAP["city"]: info.city,
         FIELD_MAP["state"]: info.state,

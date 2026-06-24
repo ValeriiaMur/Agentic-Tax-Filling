@@ -51,7 +51,7 @@ def test_sample_w2_fills_full_1040_header():
     f = PdfReader(s.pdf_path).get_fields()
     assert f[FIELD_MAP["first_name"]].get("/V") == "Jordan A"
     assert f[FIELD_MAP["last_name"]].get("/V") == "Rivera"
-    assert f[FIELD_MAP["ssn"]].get("/V") == "123-45-6789"
+    assert f[FIELD_MAP["ssn"]].get("/V") == "123456789"  # comb field, digits only
     assert f[FIELD_MAP["address"]].get("/V") == "100 Main St"
     assert f[FIELD_MAP["city"]].get("/V") == "Austin"
     assert f[FIELD_MAP["state"]].get("/V") == "TX"
