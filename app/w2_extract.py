@@ -20,7 +20,10 @@ import os
 import re
 from typing import Optional
 
-VISION_MODEL = os.environ.get("VISION_MODEL", "claude-3-5-sonnet-20241022")
+# Cost-friendly default for structured W-2 box extraction. A misread never reaches
+# the form (user confirms, engine is deterministic), so Haiku is a safe default;
+# set VISION_MODEL=claude-sonnet-4-6 for more extraction headroom.
+VISION_MODEL = os.environ.get("VISION_MODEL", "claude-haiku-4-5")
 
 _NUM = r"\$?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)"
 

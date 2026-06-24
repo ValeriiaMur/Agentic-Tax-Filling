@@ -44,22 +44,24 @@ that declines investing/tax-advice/off-task asks *without* spending a question.
 by the LLM. (4) **W-2 validation** (wages required, withholding-over-wages
 flagged, etc.) with a graceful retry. Pydantic models validate at every boundary.
 
-**Conversation design — 5 questions, warm tone.** Identity comes from the W-2,
-so after confirming the figures the agent asks exactly five plain-language
-questions: filing status → dependents → other income → deduction → estimated
-payments. The 5-question budget is the hard ceiling, counted in code. Two of the
-questions double as guardrails: declaring non-W-2 income or choosing "itemized"
-each logs a guardrail and the agent explains the fallback. Messages are written
-warm and human in the policy itself; Claude can rephrase them further when
-enabled (`USE_LLM_PHRASING=1`), but must preserve every number.
+**Conversation design — free-text, 3 core questions, warm tone.** It's a natural
+typed conversation, not a click-through of buttons (the brief explicitly wants
+"warm and human, not robotic or interrogative"). Identity comes from the W-2, so
+after confirming the figures the agent asks just two more: filing status →
+dependents. Intent is parsed **deterministically in code** — negation-aware
+affirmation ("no, that's not right" reads as a NO even though it contains
+"right"), filing-status, and dependent-count parsing — so the LLM never drives
+the flow. The 5-question budget is a hard ceiling counted in code; the two spare
+turns absorb a correction or clarification, and when the budget is exhausted the
+agent assumes a safe default and says so rather than looping. After completion
+the user can ask about the result or change an answer, and it recomputes.
 
-**Frontend — Malleable UI, built 1:1.** `static/index.html` (vanilla JS, no build
-step) reproduces the supplied design: near-white surface, single iris accent,
-ambient canvas "blob" that breathes per stage, spring "crystallize" motion, and a
-Decision Trail drawer. The design tokens are reused verbatim. Critically, **no
-data is hardcoded in the browser** — the W-2 figures, the five questions (with
-their deduction amounts), the computed 1040, and the trail are all fetched from
-the backend, keeping tax math server-side per the accuracy rule.
+**Frontend — deliberately minimal.** `static/index.html` (vanilla JS, no build
+step) is a single chat column with drag-and-drop W-2 upload, a "Use a sample W-2"
+link, a free-text composer, and a live Observation-trail panel on the right. The
+brief says UI polish isn't judged, so effort went to the harness. The browser
+holds no tax logic — W-2 figures, the computed 1040, and the trail all come from
+the backend.
 
 **State & sessions — in-memory per session.** A `dict` of `session_id → TaxSession`.
 Simplest thing that demonstrates the loop for a single-instance prototype; a
@@ -74,19 +76,18 @@ can't drift from reality. (LangSmith tracing can be layered on via env vars.)
 **Hosting — Railway** (free, Git-push deploy). `railway.json` + `Procfile` bind
 to `$PORT`; the same setup runs on Render/Fly. Health check at `/healthz`.
 
-**Testing — 56 tests, TDD.** Tax-table accuracy (official IRS values), CTC and
-estimated-payment math, guardrails, PDF field round-trip, and full session
-**end-to-end** tests (sample W-2 in → downloadable 1040 out, clean + messy paths)
-that run offline with no LLM key.
+**Testing — 57 tests, TDD.** Tax-table accuracy (official IRS values), Child Tax
+Credit math, guardrails, PDF field round-trip, and full session **end-to-end**
+tests (sample W-2 in → downloadable 1040 out) that run offline with no LLM key.
 
 ## Documented limitations (scope, on purpose)
 
-- Single W-2; wage income + federal withholding only. No EIC, no itemizing
-  (an itemized choice falls back to the standard deduction), no non-W-2 income
-  (declaring it logs a guardrail and excludes it) — correct for the target profile.
-- Dependents apply the 2025 Child Tax Credit ($2,200/child, capped at tax owed);
-  estimated payments add to line 26. Filing status is selectable (single, MFJ,
-  MFS, HOH, QSS) and changes the deduction/brackets.
+- Single W-2; wage income + federal withholding only. No EIC, no itemizing, no
+  non-W-2 income — correct for the target profile.
+- Dependents apply the 2025 Child Tax Credit ($2,200/child, capped at tax owed).
+  Filing status is selectable (single, MFJ, MFS, HOH, QSS) and changes the
+  deduction/brackets. (The engine also supports estimated payments; the current
+  3-question flow doesn't ask for them, so they default to zero.)
 - Tax is computed with the IRS 2025 Tax Table (more accurate than a raw bracket
   formula for incomes under $100k); a few dollars may differ from a continuous-
   bracket estimate, by design.

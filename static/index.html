@@ -1,391 +1,176 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>File your taxes — Form 1040 (2025)</title>
+<title>Tax-Filing Assistant · 2025 Form 1040</title>
 <style>
-/* ── Malleable UI design tokens (from _ds/tokens/*.css) ── */
-:root{
-  --color-iris-100:oklch(95% 0.03 265);--color-iris-200:oklch(91% 0.05 265);
-  --color-iris-500:oklch(72% 0.12 265);--color-iris-700:oklch(50% 0.16 265);
-  --color-neutral-0:#FFFFFF;--color-neutral-50:#F9F9FB;--color-neutral-100:#F2F2F5;
-  --color-neutral-400:#AEAEB6;--color-neutral-600:#6E6E76;--color-neutral-900:#1C1C22;
-  --color-bg:var(--color-neutral-100);--color-bg-elevated:#EBEBEE;--color-surface:var(--color-neutral-0);
-  --color-text-primary:var(--color-neutral-900);--color-text-secondary:var(--color-neutral-600);--color-text-tertiary:var(--color-neutral-400);
-  --color-accent:var(--color-iris-500);--color-accent-muted:var(--color-iris-100);--color-accent-subtle:var(--color-iris-200);--color-accent-fg:var(--color-iris-700);
-  --color-border:rgba(0,0,0,0.07);--color-border-strong:rgba(0,0,0,0.12);--color-border-subtle:rgba(0,0,0,0.04);
-  --font-sans:-apple-system,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;
-  --font-display:-apple-system,'SF Pro Display','Helvetica Neue',system-ui,sans-serif;
-  --font-mono:'SF Mono','Fira Code','Cascadia Code',monospace;
-  --type-display:200 56px/1.1 var(--font-display);
-  --type-title:300 20px/1.3 var(--font-display);
-  --radius-card:22px;
-  --shadow-sm:0 2px 8px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:0 4px 24px rgba(0,0,0,0.07),0 1px 3px rgba(0,0,0,0.04);
-  --shadow-lg:0 8px 48px rgba(0,0,0,0.10),0 1px 4px rgba(0,0,0,0.06);
-  --shadow-xl:0 16px 64px rgba(0,0,0,0.12),0 2px 6px rgba(0,0,0,0.06);
-  --blur-md:blur(12px);--blur-lg:blur(24px);--glass-light:rgba(255,255,255,0.72);
-  --spring-snappy:cubic-bezier(0.34,1.56,0.64,1.00);--spring-gentle:cubic-bezier(0.34,1.20,0.64,1.00);
-  --ease-soft:cubic-bezier(0.4,0.0,0.2,1.0);
-}
-@font-face{font-family:'Fira Code';font-weight:400;font-display:swap;
-  src:local('Fira Code'),url('https://cdn.jsdelivr.net/npm/@fontsource/fira-code@5/files/fira-code-latin-400-normal.woff2') format('woff2');}
-@font-face{font-family:'Fira Code';font-weight:500;font-display:swap;
-  src:local('Fira Code Medium'),url('https://cdn.jsdelivr.net/npm/@fontsource/fira-code@5/files/fira-code-latin-500-normal.woff2') format('woff2');}
-*{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
-::selection{background:var(--color-accent-subtle);}
-.scroll-y::-webkit-scrollbar{width:8px;}
-.scroll-y::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.10);border-radius:9999px;}
-.scroll-y::-webkit-scrollbar-track{background:transparent;}
-@keyframes crystallize{0%{opacity:0;transform:scale(0.9) translateY(10px);filter:blur(5px);}100%{opacity:1;transform:none;filter:none;}}
-@keyframes bubbleIn{0%{opacity:0;transform:translateY(8px) scale(0.98);}100%{opacity:1;transform:none;}}
-@keyframes drawerIn{0%{transform:translateX(110%);}100%{transform:translateX(0);}}
-@keyframes scrimIn{0%{opacity:0;}100%{opacity:1;}}
-@keyframes pulseDot{0%,100%{transform:scale(1);opacity:0.55;}50%{transform:scale(1.35);opacity:1;}}
-@keyframes orbBreathe{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
-.hover-op{transition:opacity 150ms var(--ease-soft),transform 120ms var(--spring-snappy);}
-.hover-op:hover{opacity:0.85;}.hover-op:active{transform:scale(0.97);}
-.card-hover{transition:box-shadow 220ms var(--ease-soft),transform 220ms var(--spring-gentle);cursor:pointer;}
-.card-hover:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);}
-.card-hover:active{transform:scale(0.98);}
-input{font-family:var(--font-sans);}
+  :root { --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#1f2a37;
+          --txt:#e6edf3; --mut:#8b98a8; --accent:#3b82f6; --good:#22c55e;
+          --warn:#f59e0b; --user:#1d4ed8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex;
+           align-items:baseline; gap:12px; }
+  header h1 { font-size:16px; margin:0; font-weight:650; }
+  header .sub { color:var(--mut); font-size:13px; }
+  .wrap { display:grid; grid-template-columns:1fr 380px; gap:0; height:calc(100vh - 53px); }
+  .chat { display:flex; flex-direction:column; min-width:0; }
+  .msgs { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:74%; padding:10px 14px; border-radius:14px; white-space:pre-wrap; }
+  .bot { background:var(--panel); border:1px solid var(--line); align-self:flex-start;
+         border-bottom-left-radius:4px; }
+  .me { background:var(--user); align-self:flex-end; border-bottom-right-radius:4px; }
+  .msg strong { font-weight:700; }
+  .drop { margin:0 20px 10px; border:1.5px dashed var(--line); border-radius:12px;
+          padding:14px; text-align:center; color:var(--mut); cursor:pointer;
+          background:var(--panel2); transition:.15s; }
+  .drop.hot { border-color:var(--accent); color:var(--txt); background:#10233f; }
+  .drop b { color:var(--txt); }
+  .drop .sm { font-size:12px; }
+  .drop a { color:var(--accent); text-decoration:none; }
+  .composer { display:flex; gap:8px; padding:12px 20px 18px; border-top:1px solid var(--line); }
+  .composer input { flex:1; background:var(--panel); border:1px solid var(--line);
+        color:var(--txt); border-radius:10px; padding:11px 14px; font-size:15px; outline:none; }
+  .composer input:focus { border-color:var(--accent); }
+  .composer button { background:var(--accent); color:#fff; border:0; border-radius:10px;
+        padding:0 18px; font-weight:600; cursor:pointer; }
+  .composer button:disabled { opacity:.5; cursor:default; }
+  .dl { margin:0 20px 6px; }
+  .dl a { display:inline-block; background:var(--good); color:#04210f; font-weight:700;
+          padding:9px 16px; border-radius:10px; text-decoration:none; }
+  /* observation panel */
+  .obs { background:var(--panel2); border-left:1px solid var(--line); display:flex;
+         flex-direction:column; min-width:0; }
+  .obs h2 { font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+            color:var(--mut); margin:0; padding:16px 16px 8px; }
+  .trail { flex:1; overflow-y:auto; padding:0 14px 16px; font:12.5px/1.5 ui-monospace,Menlo,monospace; }
+  .ev { padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:7px;
+        background:var(--panel); }
+  .ev.flag { border-color:var(--warn); }
+  .ev .top { display:flex; justify-content:space-between; color:var(--mut); }
+  .ev .ph { color:var(--accent); }
+  .ev.flag .ph { color:var(--warn); }
+  .ev .ac { color:var(--txt); margin-top:2px; }
+  .ev .de { color:var(--mut); margin-top:1px; }
+  .empty { color:var(--mut); padding:8px 4px; }
 </style>
 </head>
-<body style="position:relative;height:100vh;display:flex;flex-direction:column;background:var(--color-bg-elevated);font-family:var(--font-sans);color:var(--color-text-primary);overflow:hidden;">
-
-<canvas id="blob" style="position:fixed;left:0;right:0;bottom:0;width:100%;height:360px;pointer-events:none;z-index:0;"></canvas>
-
-<!-- top bar -->
-<div style="position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;padding:18px 26px;flex-shrink:0;">
-  <div style="display:flex;align-items:center;gap:11px;">
-    <span style="font-size:17px;color:var(--color-accent);animation:orbBreathe 4200ms var(--ease-soft) infinite;">◉</span>
-    <span style="font-size:13px;font-weight:500;letter-spacing:-0.01em;">Form 1040</span>
-    <span style="font-size:13px;color:var(--color-text-tertiary);">·</span>
-    <span style="font-size:13px;color:var(--color-text-tertiary);">tax year 2025</span>
-  </div>
-  <div id="trailBtn" onclick="toggleObserve()" style="display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:9999px;background:var(--glass-light);-webkit-backdrop-filter:var(--blur-md);backdrop-filter:var(--blur-md);box-shadow:var(--shadow-sm);cursor:pointer;transition:box-shadow 200ms var(--ease-soft);">
-    <span style="font-size:12px;">◇</span>
-    <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary);letter-spacing:0.01em;">Decision trail</span>
-    <span id="obsBadge" style="display:none;font-size:10px;font-weight:600;color:var(--color-surface);background:var(--color-accent);border-radius:9999px;padding:2px 7px;line-height:1;">0</span>
-  </div>
-</div>
-
-<!-- main column -->
-<div style="position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;">
-  <div style="width:min(740px,92%);height:100%;display:flex;flex-direction:column;min-height:0;">
-
-    <!-- IDLE -->
-    <div id="idle" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding-bottom:60px;animation:crystallize 600ms var(--spring-snappy) both;">
-      <div style="font:var(--type-display);letter-spacing:-0.05em;line-height:1.05;">File your taxes</div>
-      <div style="font-size:17px;font-weight:300;color:var(--color-text-secondary);letter-spacing:-0.01em;max-width:430px;line-height:1.6;margin-top:6px;">A federal Form 1040 for 2025, prepared from your W-2 in a short conversation.</div>
-      <div class="hover-op" onclick="begin()" style="margin-top:30px;display:inline-flex;align-items:center;gap:8px;background:var(--color-text-primary);color:var(--color-surface);padding:15px 30px;border-radius:14px;font-size:15px;font-weight:500;letter-spacing:0.01em;cursor:pointer;box-shadow:var(--shadow-md);">Begin <span style="font-size:14px;">→</span></div>
-      <div style="margin-top:14px;font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.06em;text-transform:uppercase;">~2 minutes · nothing leaves this screen</div>
+<body>
+<header>
+  <h1>Agentic Tax-Filing Assistant</h1>
+  <span class="sub">2025 Form 1040 · educational demo, fake data only</span>
+</header>
+<div class="wrap">
+  <div class="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="dl" id="dlBar" style="display:none">
+      <a id="dlLink" href="#">↓ Download your completed 1040 (PDF)</a>
     </div>
-
-    <!-- CONVERSATION -->
-    <div id="chat" style="display:none;flex:1;flex-direction:column;min-height:0;">
-      <div id="transcript" class="scroll-y" style="flex:1;overflow-y:auto;min-height:0;padding:8px 4px 20px;display:flex;flex-direction:column;gap:14px;"></div>
-      <div style="flex-shrink:0;padding:10px 4px 22px;">
-        <div style="display:flex;align-items:center;gap:11px;background:var(--color-surface);border-radius:9999px;padding:11px 18px;box-shadow:var(--shadow-md);">
-          <span style="width:9px;height:9px;border-radius:50%;background:var(--color-accent);flex-shrink:0;"></span>
-          <input id="cmd" type="text" placeholder="Ask about your return…" onkeydown="if(event.key==='Enter')submitCommand()" style="flex:1;border:none;outline:none;background:transparent;font-size:14.5px;font-weight:300;color:var(--color-text-primary);letter-spacing:0.005em;caret-color:var(--color-accent);"/>
-          <span onclick="submitCommand()" style="font-size:14px;color:var(--color-text-tertiary);cursor:pointer;user-select:none;">↵</span>
-        </div>
-        <div id="toast" style="display:none;margin:11px 8px 0;align-items:center;gap:9px;animation:bubbleIn 360ms var(--spring-gentle) both;">
-          <span style="font-size:12px;color:oklch(58% 0.13 65);">⚠</span>
-          <span id="toastText" style="font-size:12.5px;color:var(--color-text-secondary);line-height:1.5;"></span>
-        </div>
-      </div>
+    <div class="drop" id="drop">
+      <div><b>Drop your W-2 here</b> or <a href="#" id="browse">browse</a> — photo or PDF, any W-2.</div>
+      <div class="sm">No W-2 handy? <a href="#" id="useSample">Use a sample W-2</a>.</div>
+      <input type="file" id="file" accept="image/*,application/pdf" hidden />
     </div>
-
+    <div class="composer">
+      <input id="text" placeholder="Type a message, or your W-2 figures…" autocomplete="off" />
+      <button id="send">Send</button>
+    </div>
   </div>
+  <aside class="obs">
+    <h2>Observation trail · what the agent did</h2>
+    <div class="trail" id="trail"><div class="empty">Decisions and tool calls appear here.</div></div>
+  </aside>
 </div>
-
-<!-- decision-trail drawer -->
-<div id="drawer" style="display:none;"></div>
-
 <script>
-const $=s=>document.querySelector(s);
-const state={sid:null,stage:'idle',messy:false,observations:[],obsOpen:false,w2:null,question:null,result:null};
+let SID = null;
+const $ = id => document.getElementById(id);
+const msgs = $('msgs');
 
-function api(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());}
+function mdBold(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); }
 
-// ── DOM helpers ──
-function elem(tag,style,html){const e=document.createElement(tag);if(style)e.style.cssText=style;if(html!=null)e.innerHTML=html;return e;}
-function txt(tag,style,text){const e=document.createElement(tag);if(style)e.style.cssText=style;if(text!=null)e.textContent=text;return e;}
-
-function scrollDown(){const t=$('#transcript');setTimeout(()=>{t.scrollTop=t.scrollHeight;},60);}
-
-let activeCard=null;
-function clearActive(){if(activeCard){activeCard.remove();activeCard=null;}}
-function setActive(node){clearActive();activeCard=node;$('#transcript').appendChild(node);scrollDown();}
-
-// ── transcript turns ──
-function agentBubble(text,sub){
-  const wrap=elem('div','align-self:flex-start;max-width:84%;animation:bubbleIn 420ms var(--spring-gentle) both;');
-  wrap.appendChild(txt('div','background:var(--color-surface);border-radius:20px 20px 20px 6px;padding:14px 18px;box-shadow:var(--shadow-sm);font-size:15px;line-height:1.55;color:var(--color-text-primary);letter-spacing:-0.005em;',text));
-  if(sub)wrap.appendChild(txt('div','padding:7px 6px 0 4px;font-size:12.5px;color:var(--color-text-tertiary);line-height:1.5;',sub));
-  $('#transcript').appendChild(wrap);scrollDown();
-}
-function userBubble(text){
-  const b=txt('div','align-self:flex-end;max-width:80%;background:var(--color-text-primary);color:var(--color-surface);border-radius:20px 20px 6px 20px;padding:12px 18px;font-size:14.5px;line-height:1.5;letter-spacing:-0.005em;box-shadow:var(--shadow-sm);animation:bubbleIn 420ms var(--spring-gentle) both;',text);
-  $('#transcript').appendChild(b);scrollDown();
-}
-function summaryCard(s){
-  const c=elem('div','align-self:flex-start;width:300px;max-width:84%;background:var(--color-surface);border-radius:18px;padding:16px 18px;box-shadow:var(--shadow-sm);animation:bubbleIn 420ms var(--spring-gentle) both;');
-  const h=elem('div','display:flex;align-items:center;gap:8px;margin-bottom:10px;');
-  h.appendChild(txt('span','font-size:12px;color:var(--color-accent);','✓'));
-  h.appendChild(txt('span','font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-tertiary);',s.title));
-  c.appendChild(h);
-  s.rows.forEach(r=>{const row=elem('div','display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;');
-    row.appendChild(txt('span','font-size:12.5px;color:var(--color-text-tertiary);',r.label));
-    row.appendChild(txt('span','font-size:13px;font-weight:500;color:var(--color-text-secondary);',r.value));c.appendChild(row);});
-  $('#transcript').appendChild(c);scrollDown();
-}
-function processingBubble(text){
-  const b=elem('div','align-self:flex-start;display:flex;align-items:center;gap:13px;background:var(--color-surface);border-radius:20px;padding:15px 20px;box-shadow:var(--shadow-sm);animation:bubbleIn 420ms var(--spring-gentle) both;');
-  b.appendChild(elem('span','width:11px;height:11px;border-radius:50%;background:var(--color-accent);animation:pulseDot 1100ms var(--ease-soft) infinite;'));
-  b.appendChild(txt('span','font-size:14px;color:var(--color-text-secondary);',text));
-  setActive(b);return b;
+function addMsg(text, who){
+  const d = document.createElement('div');
+  d.className = 'msg ' + (who==='me'?'me':'bot');
+  d.innerHTML = mdBold(text);
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
 }
 
-// ── active cards ──
-function uploadCard(){
-  const c=elem('div','align-self:stretch;background:var(--color-surface);border-radius:var(--radius-card);padding:24px;box-shadow:var(--shadow-lg);animation:crystallize 520ms var(--spring-snappy) both;');
-  const dz=elem('div','border:1.5px dashed var(--color-border-strong);border-radius:18px;padding:30px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;');
-  dz.appendChild(txt('div','font-size:26px;color:var(--color-text-tertiary);margin-bottom:4px;','↑'));
-  dz.appendChild(txt('div','font-size:15px;font-weight:500;letter-spacing:-0.01em;','Add your W-2'));
-  dz.appendChild(txt('div','font-size:12.5px;color:var(--color-text-tertiary);line-height:1.5;','A photo or PDF — figures are read on the spot.'));
-  c.appendChild(dz);
-  const row=elem('div','display:flex;gap:10px;margin-top:16px;');
-  const clean=txt('div','flex:1;text-align:center;background:var(--color-text-primary);color:var(--color-surface);padding:13px;border-radius:14px;font-size:14px;font-weight:500;cursor:pointer;','Use sample W-2');
-  clean.className='hover-op';clean.onclick=()=>doUpload(false);
-  const messy=txt('div','flex:1;text-align:center;background:transparent;color:var(--color-text-secondary);padding:13px;border-radius:14px;font-size:14px;font-weight:500;cursor:pointer;box-shadow:inset 0 0 0 1px var(--color-border-strong);','Use blurry phone photo');
-  messy.className='hover-op';messy.onclick=()=>doUpload(true);
-  row.appendChild(clean);row.appendChild(messy);c.appendChild(row);
-  setActive(c);
-}
-
-function confirmCard(w2){
-  const c=elem('div','align-self:stretch;background:var(--color-surface);border-radius:var(--radius-card);padding:24px 26px;box-shadow:var(--shadow-lg);animation:crystallize 520ms var(--spring-snappy) both;');
-  const head=elem('div','display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;');
-  const ht=elem('div');
-  ht.appendChild(txt('div','font:var(--type-title);letter-spacing:-0.02em;','W-2 · '+w2.employer));
-  ht.appendChild(txt('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:3px;',w2.meta));
-  head.appendChild(ht);
-  head.appendChild(txt('span','font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-accent-fg);background:var(--color-accent-muted);padding:5px 10px;border-radius:9999px;',w2.confLabel));
-  c.appendChild(head);
-  let editInput=null;
-  w2.rows.forEach(r=>{
-    const row=elem('div','display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--color-border);');
-    row.appendChild(txt('span','font-size:13px;color:var(--color-text-secondary);',r.label));
-    if(r.flagged){
-      const wrap=elem('span','display:flex;align-items:center;gap:8px;');
-      wrap.appendChild(txt('span','font-size:10px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:oklch(58% 0.13 65);background:oklch(95% 0.05 75);padding:3px 8px;border-radius:9999px;','verify'));
-      editInput=elem('input','width:108px;text-align:right;border:none;outline:none;background:oklch(96% 0.04 75);border-radius:10px;padding:7px 11px;font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--color-text-primary);box-shadow:inset 0 0 0 1.5px oklch(80% 0.10 75);');
-      editInput.type='text';editInput.value=(w2.box1_value!=null?Math.round(w2.box1_value):'');
-      wrap.appendChild(editInput);row.appendChild(wrap);
-    }else{
-      row.appendChild(txt('span','font-family:var(--font-mono);font-size:13.5px;font-weight:500;color:var(--color-text-primary);',r.value));
-    }
-    c.appendChild(row);
+function renderTrail(obs){
+  const box = $('trail');
+  if(!obs || !obs.length){ return; }
+  box.innerHTML = '';
+  obs.forEach(o=>{
+    const d = document.createElement('div');
+    d.className = 'ev' + (o.flag?' flag':'');
+    d.innerHTML = `<div class="top"><span class="ph">${o.icon||'·'} ${o.phase}</span>`
+      + `<span>${o.confText||''}</span></div>`
+      + `<div class="ac">${o.action}</div><div class="de">${o.detail}</div>`;
+    box.appendChild(d);
   });
-  const btn=txt('div','margin-top:18px;text-align:center;background:var(--color-text-primary);color:var(--color-surface);padding:13px;border-radius:14px;font-size:14px;font-weight:500;cursor:pointer;',state.messy?'Verify & continue':'Confirm & continue');
-  btn.className='hover-op';
-  btn.onclick=()=>{const ov=editInput?parseInt(String(editInput.value).replace(/[^0-9]/g,''),10):null;doConfirm(isNaN(ov)?null:ov);};
-  c.appendChild(btn);
-  setActive(c);
+  box.scrollTop = box.scrollHeight;
 }
 
-function questionCard(q){
-  const wrap=elem('div','align-self:stretch;animation:crystallize 480ms var(--spring-snappy) both;');
-  wrap.appendChild(txt('div','font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-text-tertiary);margin:2px 4px 12px;',q.progress));
-  const grid=elem('div','display:flex;gap:11px;flex-wrap:wrap;');
-  q.options.forEach(opt=>{
-    const card=elem('div','flex:1;min-width:140px;background:var(--color-surface);border-radius:18px;padding:18px 18px 16px;box-shadow:var(--shadow-md);');
-    card.className='card-hover';
-    card.appendChild(txt('div','font-size:16px;letter-spacing:-0.01em;color:var(--color-text-primary);',opt.label));
-    if(opt.sub)card.appendChild(txt('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:5px;',opt.sub));
-    card.onclick=()=>doAnswer(opt.value,opt.label);
-    grid.appendChild(card);
-  });
-  wrap.appendChild(grid);
-  setActive(wrap);
-}
-
-function reviewCard(r){
-  const c=elem('div','align-self:stretch;background:var(--color-surface);border-radius:var(--radius-card);padding:26px 28px;box-shadow:var(--shadow-lg);animation:crystallize 520ms var(--spring-snappy) both;');
-  const head=elem('div','display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;');
-  const ht=elem('div');
-  ht.appendChild(txt('div','font:var(--type-title);letter-spacing:-0.02em;','Form 1040'));
-  ht.appendChild(txt('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:3px;','U.S. Individual Income Tax Return · '+r.statusLabel));
-  head.appendChild(ht);
-  head.appendChild(txt('span','font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-accent-fg);background:var(--color-accent-muted);padding:5px 10px;border-radius:9999px;','tax year 2025'));
-  c.appendChild(head);
-  r.lines.forEach(ln=>{
-    const row=elem('div','display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--color-border);');
-    const left=elem('span','display:flex;align-items:baseline;gap:11px;');
-    left.appendChild(txt('span','font-family:var(--font-mono);font-size:10.5px;color:var(--color-text-tertiary);min-width:26px;',ln.line));
-    left.appendChild(txt('span','font-size:13px;color:var(--color-text-secondary);',ln.label));
-    row.appendChild(left);
-    row.appendChild(txt('span','font-family:var(--font-mono);font-size:13.5px;font-weight:500;color:var(--color-text-primary);',ln.value));
-    c.appendChild(row);
-  });
-  const banner=elem('div','display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:18px 20px;border-radius:16px;background:var(--color-accent-muted);');
-  const bl=elem('div');
-  bl.appendChild(txt('div','font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-accent-fg);',r.outcomeLabel));
-  bl.appendChild(txt('div','font-size:12px;color:var(--color-text-tertiary);margin-top:3px;',r.outcomeLine));
-  banner.appendChild(bl);
-  banner.appendChild(txt('div','font:var(--type-display);font-size:34px;letter-spacing:-0.03em;color:var(--color-accent-fg);',r.outcomeAmount));
-  c.appendChild(banner);
-  const btn=txt('div','margin-top:18px;text-align:center;background:var(--color-text-primary);color:var(--color-surface);padding:13px;border-radius:14px;font-size:14px;font-weight:500;cursor:pointer;','Looks right →');
-  btn.className='hover-op';btn.onclick=doFinalize;
-  c.appendChild(btn);
-  setActive(c);
-}
-
-function downloadCard(r){
-  const c=elem('div','align-self:stretch;background:var(--color-surface);border-radius:var(--radius-card);padding:30px 28px;box-shadow:var(--shadow-lg);text-align:center;animation:crystallize 520ms var(--spring-snappy) both;');
-  c.appendChild(elem('div','width:48px;height:48px;margin:0 auto 16px;border-radius:50%;background:var(--color-accent-muted);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--color-accent-fg);','✓'));
-  c.appendChild(txt('div','font:var(--type-title);font-size:22px;letter-spacing:-0.02em;','Your 1040 is ready'));
-  c.appendChild(txt('div','font-size:13px;color:var(--color-text-tertiary);margin-top:6px;line-height:1.55;',r.outcomeLine+' · reviewed across '+state.observations.length+' decision steps.'));
-  const dl=elem('div','margin-top:22px;display:inline-flex;align-items:center;gap:9px;background:var(--color-text-primary);color:var(--color-surface);padding:14px 28px;border-radius:14px;font-size:14.5px;font-weight:500;cursor:pointer;','<span style="font-size:14px;">↓</span> Download return');
-  dl.className='hover-op';dl.onclick=()=>{window.location='/api/download/'+state.sid;};
-  c.appendChild(dl);
-  const over=txt('div','margin-top:14px;font-size:12px;color:var(--color-text-tertiary);cursor:pointer;letter-spacing:0.01em;','Start over');
-  over.onclick=doReset;c.appendChild(over);
-  setActive(c);
-}
-
-// ── decision trail drawer ──
-const PHASE_COLOR={Session:'var(--color-text-tertiary)',Vision:'var(--color-accent-fg)',Reasoning:'var(--color-accent-fg)',Calculation:'var(--color-accent-fg)',Decision:'var(--color-text-primary)',Guardrail:'oklch(58% 0.13 65)'};
-function renderObs(obs){
-  state.observations=obs||state.observations;
-  const n=state.observations.length;
-  const badge=$('#obsBadge');badge.textContent=n;badge.style.display=n>0?'inline-block':'none';
-  if(state.obsOpen)drawDrawer();
-}
-function toggleObserve(){state.obsOpen=!state.obsOpen;drawDrawer();}
-function drawDrawer(){
-  const d=$('#drawer');
-  if(!state.obsOpen){d.style.display='none';d.innerHTML='';return;}
-  d.style.display='block';d.innerHTML='';
-  const scrim=elem('div','position:fixed;inset:0;z-index:8;background:rgba(20,20,28,0.18);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:scrimIn 280ms var(--ease-soft) both;');
-  scrim.onclick=toggleObserve;d.appendChild(scrim);
-  const panel=elem('div','position:fixed;top:0;right:0;bottom:0;z-index:9;width:min(400px,90%);background:var(--glass-light);-webkit-backdrop-filter:var(--blur-lg);backdrop-filter:var(--blur-lg);box-shadow:var(--shadow-xl);display:flex;flex-direction:column;animation:drawerIn 480ms var(--spring-snappy) both;border-radius:32px 0 0 32px;');
-  const head=elem('div','display:flex;align-items:center;justify-content:space-between;padding:26px 26px 16px;flex-shrink:0;');
-  const ht=elem('div');
-  ht.appendChild(txt('div','font:var(--type-title);font-size:19px;letter-spacing:-0.02em;','Decision trail'));
-  ht.appendChild(txt('div','font-size:11.5px;color:var(--color-text-tertiary);margin-top:3px;','Every observation, rule, and choice the agent made.'));
-  head.appendChild(ht);
-  const x=txt('span','font-size:15px;color:var(--color-text-tertiary);cursor:pointer;padding:4px 8px;','✕');x.onclick=toggleObserve;head.appendChild(x);
-  panel.appendChild(head);
-  const list=elem('div','flex:1;overflow-y:auto;padding:6px 22px 28px;display:flex;flex-direction:column;gap:2px;');list.className='scroll-y';
-  if(state.observations.length===0){
-    list.appendChild(txt('div','padding:40px 8px;text-align:center;font-size:13px;color:var(--color-text-tertiary);line-height:1.6;','Nothing yet. Each step the agent takes will appear here.'));
-  }
-  state.observations.forEach(ob=>{
-    const r=elem('div','display:flex;gap:14px;padding:14px 4px;border-bottom:1px solid var(--color-border-subtle);');
-    const ic=elem('div','flex-shrink:0;');
-    ic.appendChild(txt('span','width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;background:'+(ob.flag?'oklch(95% 0.05 75)':'var(--color-accent-muted)')+';color:'+(ob.flag?'oklch(58% 0.13 65)':'var(--color-accent-fg)')+';',ob.icon));
-    r.appendChild(ic);
-    const body=elem('div','flex:1;min-width:0;');
-    const top=elem('div','display:flex;align-items:center;justify-content:space-between;gap:8px;');
-    top.appendChild(txt('span','font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:'+(ob.flag?'oklch(58% 0.13 65)':(PHASE_COLOR[ob.phase]||'var(--color-text-tertiary)'))+';',ob.phase));
-    top.appendChild(txt('span','font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary);',ob.confText||''));
-    body.appendChild(top);
-    body.appendChild(txt('div','font-size:13.5px;font-weight:500;color:var(--color-text-primary);letter-spacing:-0.005em;margin-top:3px;',ob.action));
-    body.appendChild(txt('div','font-size:12px;color:var(--color-text-secondary);line-height:1.5;margin-top:3px;',ob.detail));
-    r.appendChild(body);list.appendChild(r);
-  });
-  panel.appendChild(list);d.appendChild(panel);
-}
-
-// ── flow (all data from backend) ──
-async function begin(){
-  const r=await api('/api/session',{});state.sid=r.session_id;
-  $('#idle').style.display='none';$('#chat').style.display='flex';
-  const res=await api('/api/begin',{session_id:state.sid});
-  apply(res);if(res.agent)agentBubble(res.agent.text,res.agent.sub);uploadCard();
-}
-async function doUpload(messy){
-  state.messy=messy;
-  userBubble(messy?'Uploaded W-2 (phone photo)':'Uploaded W-2.pdf');
-  processingBubble('Reading your W-2…');setBlob('processing');
-  const res=await api('/api/upload-json',{session_id:state.sid,messy:messy});
-  setTimeout(()=>{apply(res);clearActive();if(res.agent)agentBubble(res.agent.text,res.agent.sub);confirmCard(res.w2);},1900);
-}
-async function doConfirm(box1){
-  const res=await api('/api/confirm',{session_id:state.sid,box1_override:box1});
-  clearActive();if(res.user_echo)userBubble(res.user_echo);
-  apply(res);if(res.summary)summaryCard(res.summary);
-  if(res.question){agentBubble(QPROMPT(res.question),res.questionHelper||res.question.helper);questionCard(res.question);}
-}
-function QPROMPT(q){return q.prompt;}
-async function doAnswer(value,label){
-  clearActive();userBubble(label);
-  const res=await api('/api/answer',{session_id:state.sid,value:value});
-  apply(res);
-  if(res.note)agentBubble(res.note.text,res.note.sub);
-  if(res.question){
-    setTimeout(()=>{agentBubble(res.question.prompt,res.question.helper);questionCard(res.question);},300);
-  }else if(res.result){
-    processingBubble('Calculating your return…');setBlob('processing');
-    setTimeout(()=>{clearActive();if(res.agent)agentBubble(res.agent.text,res.agent.sub);reviewCard(res.result);},1700);
+function apply(snap){
+  if(snap.assistant_message) addMsg(snap.assistant_message,'bot');
+  renderTrail(snap.observations);
+  if(snap.pdf_ready){
+    $('dlBar').style.display = 'block';
+    $('dlLink').href = '/api/download/' + SID;
   }
 }
-async function doFinalize(){
-  clearActive();userBubble('Looks right.');
-  const res=await api('/api/finalize',{session_id:state.sid});
-  apply(res);if(res.agent)agentBubble(res.agent.text,res.agent.sub);downloadCard(res.result);
-}
-async function doReset(){
-  await api('/api/reset',{session_id:state.sid});
-  $('#transcript').innerHTML='';activeCard=null;state.observations=[];state.result=null;state.messy=false;
-  renderObs([]);$('#chat').style.display='none';$('#idle').style.display='flex';state.stage='idle';setBlob('idle');
-}
-async function submitCommand(){
-  const inp=$('#cmd');const v=inp.value.trim();if(!v)return;inp.value='';
-  $('#toast').style.display='none';
-  userBubble(v);
-  const res=await api('/api/command',{session_id:state.sid,text:v});
-  apply(res);if(res.agent)agentBubble(res.agent.text,res.agent.sub);
-  if(res.toast){$('#toastText').textContent=res.toast;$('#toast').style.display='flex';}
-}
-function apply(res){
-  if(res.stage){state.stage=res.stage;setBlob(res.stage);}
-  if(res.result)state.result=res.result;
-  renderObs(res.observations);
+
+async function jpost(url, body){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  return r.json();
 }
 
-// ── ambient blob canvas (ported 1:1) ──
-const blob={r:{pos:60,vel:0,target:64},op:{pos:0.35,vel:0,target:0.36},t:0};
-const BLOB_TARGET={idle:{r:64,op:0.36},upload:{r:108,op:0.7},processing:{r:132,op:1.0},confirm:{r:70,op:0.4},questions:{r:76,op:0.46},review:{r:88,op:0.5},download:{r:40,op:0.2}};
-function setBlob(stage){const t=BLOB_TARGET[stage]||BLOB_TARGET.idle;blob.r.target=t.r;blob.op.target=t.op;}
-function spring(s,dt,k=90,d=14){const a=-k*(s.pos-s.target)-d*s.vel;s.vel+=a*dt;s.pos+=s.vel*dt;return s.pos;}
-(function(){
-  const canvas=$('#blob');const ctx=canvas.getContext('2d');let last=null;
-  const resize=()=>{canvas.width=window.innerWidth;canvas.height=360;};resize();window.addEventListener('resize',resize);
-  const nodes=[{ox:0,oy:-1.0,br:1.0,ph:0.0},{ox:-0.65,oy:-0.6,br:0.72,ph:1.1},{ox:0.65,oy:-0.6,br:0.72,ph:2.2},{ox:-1.05,oy:-0.2,br:0.55,ph:0.7},{ox:1.05,oy:-0.2,br:0.55,ph:1.8},{ox:0,oy:-0.4,br:0.42,ph:3.0}];
-  function frame(ts){
-    const dt=Math.min((ts-(last||ts))/1000,0.033);last=ts;blob.t+=dt;const time=blob.t;
-    const r=spring(blob.r,dt);const op=spring(blob.op,dt);
-    const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);const cx=W/2,cy=H;
-    nodes.forEach(n=>{
-      const wx=Math.sin(time*0.5+n.ph)*r*0.09;const wy=Math.cos(time*0.4+n.ph*1.3)*r*0.07;
-      const x=cx+n.ox*r*1.25+wx;const y=cy+n.oy*r+wy;const nr=Math.max(1,n.br*r);
-      const g=ctx.createRadialGradient(x,y,0,x,y,nr);
-      g.addColorStop(0,'oklch(75% 0.11 265 / '+(op*n.br*0.95)+')');
-      g.addColorStop(0.5,'oklch(82% 0.08 265 / '+(op*n.br*0.35)+')');
-      g.addColorStop(1,'oklch(88% 0.05 265 / 0)');
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,nr,0,Math.PI*2);ctx.fill();
-    });
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-})();
+async function start(){
+  const snap = await jpost('/api/session',{});
+  SID = snap.session_id;
+  apply(snap);
+}
+
+async function sendText(){
+  const t = $('text').value.trim();
+  if(!t || !SID) return;
+  $('text').value=''; addMsg(t,'me');
+  apply(await jpost('/api/message',{session_id:SID, message:t}));
+}
+
+async function uploadFile(f){
+  if(!f || !SID) return;
+  addMsg('📎 Uploading '+f.name+'…','me');
+  const fd = new FormData(); fd.append('session_id',SID); fd.append('file',f);
+  const r = await fetch('/api/w2',{method:'POST',body:fd});
+  apply(await r.json());
+}
+
+async function useSample(){
+  if(!SID) return;
+  addMsg('📎 Using the sample W-2','me');
+  apply(await jpost('/api/sample',{session_id:SID}));
+}
+
+// wire up
+$('send').onclick = sendText;
+$('text').addEventListener('keydown', e=>{ if(e.key==='Enter') sendText(); });
+$('browse').onclick = e=>{ e.preventDefault(); $('file').click(); };
+$('file').onchange = e=>{ if(e.target.files[0]) uploadFile(e.target.files[0]); };
+$('useSample').onclick = e=>{ e.preventDefault(); useSample(); };
+
+const drop = $('drop');
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{
+  e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{
+  e.preventDefault(); drop.classList.remove('hot'); }));
+drop.addEventListener('drop', e=>{
+  const f = e.dataTransfer.files[0]; if(f) uploadFile(f); });
+
+start();
 </script>
 </body>
 </html>

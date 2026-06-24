@@ -1,330 +1,392 @@
-"""Design-aligned conversation flow — the agent's decision core.
+"""Free-text conversation policy — the agent's decision core.
 
-Implements the Malleable-UI stage machine
-(idle → upload → processing → confirm → questions×5 → review → download) on the
-server, so the four pillars stay enforced and observable in code:
+The brief is explicit: the conversation must feel "warm and human — friendly,
+clear, not robotic or interrogative," and gather what it needs in **no more than
+five questions**. So this is a natural free-text chat, not a click-through of
+multiple-choice buttons. The user types; the agent reads intent in code.
 
-  * Chat loop   - `TaxSession` carries stage, W-2, answers, and result across the
-                  discrete turn endpoints the UI calls.
-  * Tools       - extraction, computation, and PDF fill go through `ToolRegistry`.
-  * Guardrails  - a hard 5-question budget, out-of-scope decline, itemized→standard
-                  fallback, and non-W-2 income exclusion — all in code.
-  * Observation - every step appends a phased decision-trail entry
-                  (Session/Vision/Reasoning/Calculation/Decision/Guardrail) with
-                  confidence + flag, surfaced in the UI drawer.
+Why the policy lives here (and is deterministic):
+  * Chat loop   - `TaxSession` carries phase, W-2, answers, the question budget,
+                  and the result across turns. One `message(text)` call = one turn.
+  * Tools       - extraction, computation, and PDF fill run through `ToolRegistry`
+                  and the LangGraph compute pipeline (see agent.py).
+  * Guardrails  - a hard 5-question budget, out-of-scope decline, deterministic
+                  filing-status parsing, and W-2 validation — all enforced in code,
+                  not "asked for" in a prompt.
+  * Observation - every decision, tool call, and computed line value is appended
+                  to the session's ObservationLog and surfaced in the UI trail.
 
-All tax figures (deduction amounts, the questions, the computed return) come from
-the backend — never hardcoded in the browser.
+Conversation design (≤5 questions, with headroom):
+  Q1  Confirm the W-2 figures I read.   (human-in-the-loop check)
+  Q2  What's your filing status?
+  Q3  Any dependents?
+  (identity comes from the W-2; we compute after Q3.)
+
+That is three core questions, leaving two in reserve for a clarification or a
+mid-conversation correction. When the budget is exhausted the agent degrades
+gracefully — it assumes a safe default and says so — rather than looping.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 from . import tax_tables_2025 as T
-from .guardrails import QuestionBudget
+from .guardrails import (
+    QuestionBudget,
+    classify_scope,
+    parse_filing_status,
+    validate_w2_payload,
+)
 from .observability import ObservationLog
 from .schemas import Form1040Result, TaxpayerInfo, W2
 from .tools import ToolRegistry
+from .w2_extract import _NUM, _to_float, parse_w2_text
 
 HERE = os.path.dirname(__file__)
 SAMPLE_W2_JSON = os.path.join(HERE, "..", "assets", "sample_w2.json")
 
 
-class Stage(str, Enum):
-    IDLE = "idle"
-    UPLOAD = "upload"
-    PROCESSING = "processing"
-    CONFIRM = "confirm"
-    QUESTIONS = "questions"
-    REVIEW = "review"
-    DOWNLOAD = "download"
+class Phase(str, Enum):
+    AWAIT_W2 = "await_w2"
+    CONFIRM_W2 = "confirm_w2"
+    FILING_STATUS = "filing_status"
+    DEPENDENTS = "dependents"
+    COMPLETE = "complete"
+
+
+GREETING = (
+    "Hi! I'm here to help you put together your 2025 federal tax return "
+    "(Form 1040) from your W-2. It only takes a minute and a couple of quick "
+    "questions.\n\nTo start, you can upload a photo or PDF of your W-2 — or just "
+    "type in your Box 1 wages and Box 2 federal withholding and I'll take it from "
+    "there.\n\n(This is an educational demo with fake data — not tax advice or a "
+    "real filing.)"
+)
 
 
 def _money(n: float) -> str:
     return "$" + f"{round(n):,}"
 
 
-def build_questions() -> List[dict]:
-    """The five questions, with every tax figure sourced from backend constants."""
-    std = T.STANDARD_DEDUCTION
-    ctc = T.CHILD_TAX_CREDIT
-    return [
-        {
-            "id": "filing_status",
-            "prompt": "What’s your filing status?",
-            "helper": "It sets your standard deduction and tax brackets.",
-            "options": [
-                {"value": T.SINGLE, "label": "Single", "sub": f"{_money(std[T.SINGLE])} deduction"},
-                {"value": T.MFJ, "label": "Married, jointly", "sub": f"{_money(std[T.MFJ])} deduction"},
-                {"value": T.HOH, "label": "Head of household", "sub": f"{_money(std[T.HOH])} deduction"},
-            ],
-        },
-        {
-            "id": "dependents",
-            "prompt": "How many dependents?",
-            "helper": f"Qualifying children under 17 can add a {_money(ctc)} credit each.",
-            "options": [
-                {"value": 0, "label": "None", "sub": ""},
-                {"value": 1, "label": "1", "sub": f"+{_money(ctc)} credit"},
-                {"value": 2, "label": "2", "sub": f"+{_money(ctc * 2)} credit"},
-                {"value": 3, "label": "3+", "sub": f"+{_money(ctc * 3)} credit"},
-            ],
-        },
-        {
-            "id": "other_income",
-            "prompt": "Any income beyond this W-2?",
-            "helper": "1099 work, interest, dividends, self-employment.",
-            "options": [
-                {"value": "no", "label": "No, just the W-2", "sub": ""},
-                {"value": "yes", "label": "Yes, I have more", "sub": "not supported here"},
-            ],
-        },
-        {
-            "id": "deduction",
-            "prompt": "Standard or itemized deduction?",
-            "helper": "Most filers at this income take the standard deduction.",
-            "options": [
-                {"value": "standard", "label": "Standard", "sub": "recommended"},
-                {"value": "itemized", "label": "Itemized", "sub": "needs receipts"},
-            ],
-        },
-        {
-            "id": "est_payments",
-            "prompt": "Any estimated tax already paid?",
-            "helper": "Quarterly payments you sent the IRS during the year.",
-            "options": [
-                {"value": 0, "label": "None", "sub": ""},
-                {"value": 500, "label": "~$500", "sub": ""},
-                {"value": 1500, "label": "~$1,500", "sub": ""},
-            ],
-        },
-    ]
+# ── free-text intent helpers (deterministic, negation-aware) ────────────────
+
+_AFFIRM = ("yes", "yep", "yeah", "yup", "correct", "right", "looks good",
+           "looks right", "all good", "perfect", "exactly", "confirm",
+           "confirmed", "that's it", "thats it", "good", "sure", "ok", "okay",
+           "sounds good", "great")
+
+# A negation anywhere flips an otherwise-affirmative reading ("no, that's not
+# correct" contains "correct" but is clearly a NO).
+_NEGATE = (r"\bno\b", r"\bnope\b", r"\bnot\b", r"n't\b", r"\bwrong\b",
+           r"\bincorrect\b", r"\boff\b", r"\bnah\b", r"\bchange\b", r"\bfix\b",
+           r"\bedit\b", r"\bactually\b", r"\bshould be\b")
 
 
-QUESTIONS = build_questions()
+def _has_negation(text: str) -> bool:
+    low = text.lower()
+    return any(re.search(p, low) for p in _NEGATE)
+
+
+def _is_affirmative(text: str) -> bool:
+    if _has_negation(text):
+        return False
+    low = text.lower()
+    return any(a in low for a in _AFFIRM)
+
+
+def _extract_w2_corrections(text: str) -> dict:
+    """Pull explicitly-stated Box 1 / Box 2 figures from a correction message.
+
+    Only returns keys the user actually named, so "no, box 1 is 50000" updates
+    wages without silently zeroing withholding.
+    """
+    low = text.lower()
+    out: dict = {}
+    m = (re.search(r"box\s*1[^0-9$]*" + _NUM, low)
+         or re.search(r"wages?[^0-9$]*" + _NUM, low))
+    if m:
+        out["box1_wages"] = _to_float(m.group(1))
+    m = (re.search(r"box\s*2[^0-9$]*" + _NUM, low)
+         or re.search(r"(?:federal\s*)?(?:income\s*tax\s*)?(?:withh?olding|withheld)[^0-9$]*" + _NUM, low))
+    if m:
+        out["box2_federal_withholding"] = _to_float(m.group(1))
+    return out
+
+
+def _parse_dependents(text: str) -> tuple[int, bool]:
+    """Return (num_dependents, capped). Caps at 4 for this prototype's CTC model."""
+    low = text.lower()
+    if re.search(r"\b(no|none|nope|zero|0)\b", low):
+        return 0, False
+    m = re.search(r"\d+", low)
+    if m:
+        n = int(m.group(0))
+        return min(4, n), n > 4
+    # words like "one"/"two" are uncommon in answers; default to 0 if unclear
+    words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+    for w, n in words.items():
+        if re.search(rf"\b{w}\b", low):
+            return min(4, n), n > 4
+    return 0, False
 
 
 class TaxSession:
-    """Holds one user's state across the design's stage machine."""
+    """All conversation state for one user session, carried across turns."""
 
     def __init__(self, session_id: str, output_dir: str):
         self.session_id = session_id
         self.obs = ObservationLog(session_id)
         self.tools = ToolRegistry(self.obs, output_dir)
-        self.stage = Stage.IDLE
-        self.messy = False
+        self.phase = Phase.AWAIT_W2
         self.w2: dict = {}
-        self.answers = {
-            "filing_status": None, "dependents": None, "other_income": None,
-            "deduction": None, "est_payments": None,
-        }
-        self.q_index = 0
+        self.info: dict = {"filing_status": None, "num_dependents": 0}
         self.budget = QuestionBudget(limit=5)
         self.result: Optional[Form1040Result] = None
         self.pdf_path: Optional[str] = None
 
-    # ── snapshot returned to the UI ────────────────────────────────────────
-    def snapshot(self, **extra) -> dict:
+    # ── snapshot returned to the UI each turn ──────────────────────────────
+    def snapshot(self, assistant_message: str, **extra) -> dict:
         base = {
-            "stage": self.stage.value,
-            "observations": self.obs.trail(),
-            "obs_count": self.obs.trail_count,
+            "assistant_message": assistant_message,
+            "phase": self.phase.value,
             "questions_asked": self.budget.asked,
             "questions_remaining": self.budget.remaining,
+            "pdf_ready": bool(self.pdf_path),
+            "observations": self.obs.trail(),
+            "obs_count": self.obs.trail_count,
+            "result": self.result_payload(),
         }
         base.update(extra)
         return base
 
-    # ── stage: begin ───────────────────────────────────────────────────────
     def begin(self) -> dict:
-        self.stage = Stage.UPLOAD
         self.obs.observe("Session", "Return started",
-                         "Scope locked to U.S. federal Form 1040, tax year 2025.", conf=1.0)
-        return self.snapshot(agent={
-            "text": "I’ll prepare your federal Form 1040 for 2025.",
-            "sub": "Add your W-2 to begin — figures are read on the spot.",
-        })
+                         "Scope locked to U.S. federal Form 1040, tax year 2025.",
+                         conf=1.0)
+        return self.snapshot(GREETING)
 
-    # ── stage: upload + extraction ──────────────────────────────────────────
-    def _load_sample(self) -> dict:
-        with open(SAMPLE_W2_JSON, encoding="utf-8") as fh:
-            return json.load(fh)
-
-    def upload(self, messy: bool, image_bytes: bytes = None, media_type: str = "") -> dict:
-        self.messy = messy
-        self.obs.observe("Vision", "Document received",
-                         "Low-resolution phone capture, slight skew." if messy
-                         else "Clean single-page PDF.",
-                         conf=0.88 if messy else 0.99)
-
-        # Real upload uses the extract_w2 tool (Claude vision); the demo buttons
-        # use the backend sample fixture. Either way, figures come from the server.
-        data = None
-        if image_bytes:
-            extracted = self.tools.extract_w2(image_bytes=image_bytes, media_type=media_type)
-            if extracted.get("box1_wages"):
-                data = extracted
-        if data is None:
-            data = self._load_sample()
-
-        self.w2 = data
-        self.stage = Stage.CONFIRM
-        employer = data.get("employer_name") or data.get("employer") or "your employer"
-
-        if messy:
-            self.obs.observe("Vision", "W-2 parsed",
-                             f"{employer} — 5 of 6 boxes read confidently.", conf=0.82)
-            self.obs.observe("Guardrail", "Box 1 flagged",
-                             "Wages digit unclear (0.61). Routed to human verification before use.",
-                             conf=0.61, flag=True)
-            agent = {"text": f"Read your W-2 — {employer}.",
-                     "sub": "One figure came through blurry. Please verify the highlighted box before I continue."}
-        else:
-            self.obs.observe("Vision", "W-2 parsed",
-                             f"{employer} — all boxes read confidently.", conf=0.97)
-            agent = {"text": f"Read your W-2 — {employer}.",
-                     "sub": "Confirm the figures below and I’ll start your return."}
-
-        return self.snapshot(
-            user_echo="Uploaded W-2 (phone photo)" if messy else "Uploaded W-2.pdf",
-            w2=self._confirm_card(), agent=agent, messy=messy,
-        )
-
-    def _confirm_card(self) -> dict:
-        d = self.w2
-        employer = d.get("employer_name") or d.get("employer") or "your employer"
-
-        def row(label, key, flagged=False):
-            v = d.get(key)
-            return {"label": label, "value": (_money(v) if v is not None else "—"),
-                    "flagged": flagged, "raw": v}
-
-        rows = [
-            row("Box 1 — Wages, tips", "box1_wages", flagged=self.messy),
-            row("Box 2 — Federal tax withheld", "box2_federal_withholding"),
-            row("Box 3 — Social Security wages", "box3_ss_wages"),
-            row("Box 4 — Social Security tax", "box4_ss_tax"),
-            row("Box 17 — State income tax", "box17_state_withholding"),
-        ]
-        return {
-            "employer": employer,
-            "meta": "Phone photo · 5 of 6 boxes clear" if self.messy
-                    else "Single W-2 · boxes read",
-            "confLabel": "needs review" if self.messy else "high confidence",
-            "rows": rows,
-            "box1_value": d.get("box1_wages"),
-        }
-
-    # ── stage: confirm ──────────────────────────────────────────────────────
-    def confirm(self, box1_override: Optional[float] = None) -> dict:
-        if box1_override is not None:
-            self.w2["box1_wages"] = float(box1_override)
-        wages = float(self.w2.get("box1_wages") or 0)
-        wh = float(self.w2.get("box2_federal_withholding") or 0)
-        employer = self.w2.get("employer_name") or self.w2.get("employer") or "your employer"
-
-        self.obs.observe("Reasoning", "W-2 confirmed",
-                         f"Wages {_money(wages)}, federal withholding {_money(wh)} accepted.",
-                         conf=0.99)
-        self.stage = Stage.QUESTIONS
-        self.q_index = 0
-        summary = {
-            "title": "W-2 confirmed",
-            "rows": [
-                {"label": "Employer", "value": employer},
-                {"label": "Wages (Box 1)", "value": _money(wages)},
-                {"label": "Withheld (Box 2)", "value": _money(wh)},
-            ],
-        }
-        return self.snapshot(
-            user_echo=(f"Verified — wages are {_money(wages)}." if self.messy else "Confirmed."),
-            summary=summary, question=self._question_payload(0),
-        )
-
-    def _question_payload(self, i: int) -> dict:
-        q = QUESTIONS[i]
+    def _record_question(self) -> bool:
+        """Count a question if the budget allows. Returns False when exhausted."""
         if self.budget.can_ask():
             self.budget.record_question()
-        return {
-            "index": i, "total": len(QUESTIONS),
-            "id": q["id"], "prompt": q["prompt"], "helper": q["helper"],
-            "options": q["options"],
-            "progress": f"Question {i + 1} of {len(QUESTIONS)} · {q['prompt']}",
-        }
+            return True
+        return False
 
-    # ── stage: answer a question ────────────────────────────────────────────
-    def answer(self, value) -> dict:
-        q = QUESTIONS[self.q_index]
-        qid = q["id"]
-        self.answers[qid] = value
-        opt = next((o for o in q["options"] if str(o["value"]) == str(value)), None)
-        label = opt["label"] if opt else str(value)
-        self._log_answer(qid, value)
+    # ── W-2 ingestion (text paste or image/PDF via the extract_w2 tool) ─────
+    def load_sample(self) -> dict:
+        with open(SAMPLE_W2_JSON, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return self._ingest(data, source="sample")
 
-        note = None
-        if qid == "other_income" and str(value) == "yes":
-            note = {"text": "I’ll note that, but this assistant only files W-2 wage income.",
-                    "sub": "We’ll proceed with the W-2 alone — add other forms with a full preparer."}
+    def ingest_w2(self, *, text: str = "", image_bytes: bytes = None,
+                  media_type: str = "") -> dict:
+        if image_bytes:
+            data = self.tools.extract_w2(image_bytes=image_bytes, media_type=media_type)
+        else:
+            data = self.tools.extract_w2(text=text)
+        return self._ingest(data, source="upload" if image_bytes else "text")
 
-        if self.q_index + 1 < len(QUESTIONS):
-            self.q_index += 1
-            return self.snapshot(user_echo=label, note=note,
-                                 question=self._question_payload(self.q_index))
+    def _ingest(self, data: dict, source: str) -> dict:
+        ok, issues = validate_w2_payload(data)
+        if data.get("box1_wages") in (None, 0) and not ok:
+            # nothing usable — stay and ask again (no question burned)
+            self.obs.observe("Guardrail", "W-2 not readable",
+                             "Couldn't find Box 1 wages in what was provided.",
+                             conf=0.4, flag=True)
+            return self.snapshot(
+                "I couldn't quite make out the wages there. Could you share your "
+                "W-2 again — a clearer photo, or just type something like "
+                "“Box 1 wages 42000, Box 2 withholding 4200”?")
 
-        # last answer -> compute + finalize
-        self._compute()
-        return self.snapshot(user_echo=label, note=note,
-                             agent={"text": "Done — here’s your 1040.",
-                                    "sub": self._outcome_line()},
-                             result=self.result_payload())
+        self.w2 = dict(data)
+        self.phase = Phase.CONFIRM_W2
+        wages = float(self.w2.get("box1_wages") or 0)
+        wh = float(self.w2.get("box2_federal_withholding") or 0)
+        employer = self.w2.get("employer_name") or self.w2.get("employer") or ""
 
-    def _log_answer(self, qid: str, value) -> None:
-        if qid == "filing_status":
-            self.obs.observe("Reasoning", "Filing status",
-                             f"{T.FILING_STATUS_LABELS[value]} → standard deduction "
-                             f"{_money(T.STANDARD_DEDUCTION[value])} (2025).", conf=0.99)
-        elif qid == "dependents":
-            n = int(value or 0)
-            self.obs.observe("Reasoning", "Dependents",
-                             f"{n} dependent(s) → up to {_money(n * T.CHILD_TAX_CREDIT)} "
-                             "child tax credit.", conf=0.97)
-        elif qid == "other_income":
-            if str(value) == "yes":
-                self.obs.observe("Guardrail", "Out-of-scope income",
-                                 "Non-W-2 income declared but unsupported here. Excluded from this return.",
-                                 conf=0.9, flag=True)
-            else:
-                self.obs.observe("Reasoning", "Income sources",
-                                 "W-2 wages are the only income to report.", conf=0.98)
-        elif qid == "deduction":
-            if str(value) == "itemized":
-                self.obs.observe("Guardrail", "Deduction method",
-                                 "Itemizing requested but no receipts provided — standard "
-                                 "deduction used for accuracy.", conf=0.85, flag=True)
-            else:
-                self.obs.observe("Reasoning", "Deduction method",
-                                 "Standard deduction applied per IRS Form 1040 line 12.", conf=0.99)
-        elif qid == "est_payments":
-            n = int(value or 0)
-            self.obs.observe("Reasoning", "Estimated payments",
-                             (f"{_money(n)} in prior payments added to line 26." if n > 0
-                              else "No estimated payments this year."), conf=0.96)
+        self.obs.observe("Vision", "W-2 read",
+                         f"{employer + ' — ' if employer else ''}Box 1 wages "
+                         f"{_money(wages)}, Box 2 withholding {_money(wh)}.",
+                         conf=0.97 if source != "text" else 0.9)
+        for issue in issues:
+            self.obs.observe("Guardrail", "W-2 sanity check", issue, conf=0.6, flag=True)
 
-    # ── compute (deterministic) + finalize PDF via the LangGraph ────────────
+        self._record_question()  # Q1: confirm the figures
+        name = (self.w2.get("employee_name") or "").split(" ")[0]
+        hello = f"Thanks{', ' + name if name else ''}! "
+        return self.snapshot(
+            hello + f"I read your W-2 as **{_money(wages)}** in Box 1 wages and "
+            f"**{_money(wh)}** in Box 2 federal withholding. Does that look right? "
+            "(If a number's off, just tell me the correct one.)")
+
+    # ── main free-text turn handler ─────────────────────────────────────────
+    def message(self, text: str) -> dict:
+        text = (text or "").strip()
+        if not text:
+            return self.snapshot("Whenever you're ready — go ahead.")
+
+        # Scope guardrail applies every turn and never costs a question.
+        if classify_scope(text) == "out_of_scope":
+            self.obs.observe("Guardrail", "Out-of-scope request",
+                             f"“{text[:60]}” declined — I only prepare a 2025 "
+                             "Form 1040 from a W-2.", conf=0.99, flag=True)
+            tail = ("" if self.phase == Phase.COMPLETE
+                    else " Want to keep going with your return?")
+            return self.snapshot(
+                "That's outside what I can help with here — I stick to preparing "
+                "your 2025 Form 1040 from your W-2, and I can't give tax or "
+                "investment advice." + tail)
+
+        if self.phase == Phase.AWAIT_W2:
+            return self._turn_await_w2(text)
+        if self.phase == Phase.CONFIRM_W2:
+            return self._turn_confirm(text)
+        if self.phase == Phase.FILING_STATUS:
+            return self._turn_filing_status(text)
+        if self.phase == Phase.DEPENDENTS:
+            return self._turn_dependents(text)
+        return self._turn_complete(text)
+
+    def _turn_await_w2(self, text: str) -> dict:
+        parsed = parse_w2_text(text)
+        if parsed.get("box1_wages"):
+            return self.ingest_w2(text=text)
+        return self.snapshot(
+            "No problem — to get started I just need your W-2. You can upload a "
+            "photo or PDF, or type your figures like “Box 1 wages 42000, Box 2 "
+            "withholding 4200”.")
+
+    def _turn_confirm(self, text: str) -> dict:
+        corrections = _extract_w2_corrections(text)
+        if corrections:
+            self.w2.update(corrections)
+            wages = float(self.w2.get("box1_wages") or 0)
+            wh = float(self.w2.get("box2_federal_withholding") or 0)
+            self.obs.observe("Reasoning", "W-2 corrected",
+                             f"User updated figures → Box 1 {_money(wages)}, "
+                             f"Box 2 {_money(wh)}.", conf=0.95)
+            self._record_question()
+            return self.snapshot(
+                f"Got it — updated to **{_money(wages)}** in wages and "
+                f"**{_money(wh)}** withheld. Does that look right now?")
+
+        if _is_affirmative(text):
+            self.obs.observe("Reasoning", "W-2 confirmed",
+                             "Wages and withholding accepted by the taxpayer.",
+                             conf=0.99)
+            self.phase = Phase.FILING_STATUS
+            self._record_question()  # Q2
+            return self.snapshot(
+                "Great, thank you. One quick thing so I use the right standard "
+                "deduction: what's your filing status — single, married filing "
+                "jointly, married filing separately, or head of household?")
+
+        # A "no" with no number, or anything ambiguous: ask for the right figure.
+        if not self._record_question():
+            # budget exhausted — proceed with what we have rather than loop
+            return self._accept_and_ask_status(
+                "We're at my question limit, so I'll go with the figures I have. ")
+        wages = float(self.w2.get("box1_wages") or 0)
+        wh = float(self.w2.get("box2_federal_withholding") or 0)
+        return self.snapshot(
+            f"No worries — let's get it right. I currently have **{_money(wages)}** "
+            f"in Box 1 wages and **{_money(wh)}** in Box 2 withholding. What should "
+            "the correct figure be? (e.g. “Box 1 is 45000”)")
+
+    def _accept_and_ask_status(self, prefix: str = "") -> dict:
+        self.phase = Phase.FILING_STATUS
+        return self.snapshot(
+            prefix + "What's your filing status — single, married filing jointly, "
+            "married filing separately, or head of household?")
+
+    def _turn_filing_status(self, text: str) -> dict:
+        status = parse_filing_status(text)
+        if status is None:
+            if self._record_question():
+                return self.snapshot(
+                    "No worries — which of these fits best: single, married filing "
+                    "jointly, married filing separately, or head of household?")
+            # exhausted: default to single, transparently
+            status = T.SINGLE
+            self.obs.observe("Guardrail", "Question budget reached",
+                             "Couldn't confirm filing status within 5 questions — "
+                             "assuming Single; the user can correct it after.",
+                             conf=0.7, flag=True)
+
+        self.info["filing_status"] = status
+        self.obs.observe("Reasoning", "Filing status",
+                         f"{T.FILING_STATUS_LABELS[status]} → standard deduction "
+                         f"{_money(T.STANDARD_DEDUCTION[status])} (2025).", conf=0.99)
+        self.phase = Phase.DEPENDENTS
+        self._record_question()  # Q3
+        return self.snapshot(
+            "Got it. Last question: do you have any dependents you're claiming "
+            "this year? If so, how many?")
+
+    def _turn_dependents(self, text: str) -> dict:
+        num, capped = _parse_dependents(text)
+        self.info["num_dependents"] = num
+        detail = (f"{num} dependent(s) → up to "
+                  f"{_money(num * T.CHILD_TAX_CREDIT)} child tax credit.")
+        if capped:
+            detail += " (Capped at 4 for this prototype.)"
+        self.obs.observe("Reasoning", "Dependents", detail, conf=0.97)
+        return self._finalize_return()
+
+    def _turn_complete(self, text: str) -> dict:
+        # Mid-conversation correction: change filing status and recompute.
+        new_status = parse_filing_status(text)
+        if new_status and new_status != self.info.get("filing_status"):
+            self.info["filing_status"] = new_status
+            self.obs.observe("Decision", "Filing status changed",
+                             f"Recomputing as {T.FILING_STATUS_LABELS[new_status]}.",
+                             conf=0.98)
+            return self._finalize_return(reask=False,
+                prefix=f"Updated to {T.FILING_STATUS_LABELS[new_status].lower()}. ")
+
+        corrections = _extract_w2_corrections(text)
+        if corrections:
+            self.w2.update(corrections)
+            self.obs.observe("Decision", "W-2 corrected after completion",
+                             "Recomputing with updated W-2 figures.", conf=0.95)
+            return self._finalize_return(reask=False, prefix="Done — recomputed. ")
+
+        # On-topic Q&A about the finished return.
+        low = text.lower()
+        r = self.result
+        if r is not None and re.search(r"refund|owe|back|balance", low):
+            if r.line_35a_refund > 0:
+                return self.snapshot(
+                    f"You're getting a refund of **{_money(r.line_35a_refund)}** "
+                    "(line 34). It's on your downloadable 1040.")
+            return self.snapshot(
+                f"You owe **{_money(r.line_37_amount_owed)}** (line 37).")
+        if r is not None and "deduction" in low:
+            return self.snapshot(
+                f"You're taking the **{_money(r.line_12_standard_deduction)}** "
+                f"standard deduction for {r.filing_status_label} (line 12).")
+        if r is not None and re.search(r"\btax\b|owe|taxable", low):
+            return self.snapshot(
+                f"Your total tax is **{_money(r.line_24_total_tax)}** on "
+                f"{_money(r.line_15_taxable_income)} of taxable income (line 16).")
+        return self.snapshot(
+            "Your 2025 Form 1040 is ready to download. If anything looks off — "
+            "your filing status or a W-2 figure — just tell me and I'll redo it.")
+
+    # ── compute + fill PDF via the LangGraph pipeline ───────────────────────
     def _build_taxpayer(self) -> TaxpayerInfo:
-        a = self.answers
+        name = str(self.w2.get("employee_name", "") or "")
+        parts = name.split(" ")
         return TaxpayerInfo(
-            filing_status=a["filing_status"] or T.SINGLE,
-            num_dependents=int(a["dependents"] or 0),
-            est_payments=float(a["est_payments"] or 0),
-            deduction_method=a["deduction"] or "standard",
-            other_income=(str(a["other_income"]) == "yes"),
-            first_name=str(self.w2.get("employee_name", "")).split(" ")[0] if self.w2.get("employee_name") else "",
-            last_name=" ".join(str(self.w2.get("employee_name", "")).split(" ")[1:]) if self.w2.get("employee_name") else "",
+            filing_status=self.info.get("filing_status") or T.SINGLE,
+            num_dependents=int(self.info.get("num_dependents", 0) or 0),
+            first_name=parts[0] if parts else "",
+            last_name=" ".join(parts[1:]) if len(parts) > 1 else "",
             ssn=self.w2.get("employee_ssn", ""),
         )
 
@@ -338,14 +400,14 @@ class TaxSession:
             employer_name=self.w2.get("employer_name") or self.w2.get("employer") or "",
         )
 
-    def _compute(self) -> None:
-        from .agent import run_compute_graph  # local import to avoid cycle
+    def _finalize_return(self, reask: bool = True, prefix: str = "") -> dict:
+        from .agent import run_compute_graph  # local import avoids a cycle
 
         info = self._build_taxpayer()
         w2 = self._build_w2()
         self.result, self.pdf_path = run_compute_graph(self, w2, info)
-
         r = self.result
+
         self.obs.observe("Calculation", "Tax computed",
                          f"Taxable {_money(r.line_15_taxable_income)} → tax "
                          f"{_money(r.line_16_tax)} via the 2025 IRS "
@@ -354,16 +416,27 @@ class TaxSession:
         if r.line_35a_refund > 0:
             self.obs.observe("Decision", "Refund determined",
                              f"Payments {_money(r.line_33_total_payments)} exceed tax "
-                             f"{_money(r.line_24_total_tax)} → refund {_money(r.line_35a_refund)}.",
-                             conf=0.99)
+                             f"{_money(r.line_24_total_tax)} → refund "
+                             f"{_money(r.line_35a_refund)}.", conf=0.99)
+            outcome = f"you're getting a refund of **{_money(r.line_35a_refund)}**"
         else:
             self.obs.observe("Decision", "Balance due",
                              f"Tax {_money(r.line_24_total_tax)} exceeds payments "
                              f"{_money(r.line_33_total_payments)} → owe "
                              f"{_money(r.line_37_amount_owed)}.", conf=0.99)
-        self.stage = Stage.REVIEW
+            outcome = f"you owe **{_money(r.line_37_amount_owed)}**"
 
-    # ── result payload for the review/download cards ────────────────────────
+        self.phase = Phase.COMPLETE
+        return self.snapshot(
+            prefix + "All set — I've filled out your 2025 Form 1040. With "
+            f"{_money(r.line_1a_wages)} in wages and the "
+            f"{_money(r.line_12_standard_deduction)} standard deduction, your "
+            f"taxable income is {_money(r.line_15_taxable_income)} and your tax is "
+            f"{_money(r.line_16_tax)} — so {outcome}. You can download the "
+            "completed form now." + (
+                " Anything you'd like to change?" if reask else ""))
+
+    # ── result shaped for the UI review card ────────────────────────────────
     def result_payload(self) -> Optional[dict]:
         r = self.result
         if r is None:
@@ -372,7 +445,6 @@ class TaxSession:
         diff = r.line_35a_refund if is_refund else r.line_37_amount_owed
         lines = [
             {"line": "1a", "label": "Wages (W-2 box 1)", "value": _money(r.line_1a_wages)},
-            {"line": "9", "label": "Total income", "value": _money(r.line_9_total_income)},
             {"line": "11", "label": "Adjusted gross income", "value": _money(r.line_11_agi)},
             {"line": "12", "label": "Standard deduction", "value": _money(r.line_12_standard_deduction)},
             {"line": "15", "label": "Taxable income", "value": _money(r.line_15_taxable_income)},
@@ -380,76 +452,19 @@ class TaxSession:
         ]
         if r.line_19_ctc > 0:
             lines.append({"line": "19", "label": "Child tax credit", "value": "−" + _money(r.line_19_ctc)})
-        lines.append({"line": "22", "label": "Tax after credits", "value": _money(r.line_22_tax_after_credits)})
-        lines.append({"line": "24", "label": "Total tax", "value": _money(r.line_24_total_tax)})
-        lines.append({"line": "25", "label": "Federal tax withheld", "value": _money(r.line_25d_total_withholding)})
-        if r.line_26_est_payments > 0:
-            lines.append({"line": "26", "label": "Estimated payments", "value": _money(r.line_26_est_payments)})
-        lines.append({"line": "33", "label": "Total payments", "value": _money(r.line_33_total_payments)})
-        lines.append({"line": "34" if is_refund else "37",
-                      "label": "Overpayment / refund" if is_refund else "Amount you owe",
-                      "value": _money(diff)})
+        lines += [
+            {"line": "24", "label": "Total tax", "value": _money(r.line_24_total_tax)},
+            {"line": "25", "label": "Federal tax withheld", "value": _money(r.line_25d_total_withholding)},
+            {"line": "34" if is_refund else "37",
+             "label": "Refund" if is_refund else "Amount you owe", "value": _money(diff)},
+        ]
         return {
-            "statusLabel": r.filing_status_label, "lines": lines,
+            "statusLabel": r.filing_status_label,
+            "lines": lines,
             "isRefund": is_refund,
             "outcomeLabel": "Your refund" if is_refund else "You owe",
             "outcomeAmount": _money(diff),
-            "outcomeLine": (f"Refund of {_money(diff)}" if is_refund
-                            else f"Balance due of {_money(diff)}"),
         }
-
-    def _outcome_line(self) -> str:
-        p = self.result_payload()
-        return p["outcomeLine"] if p else ""
-
-    # ── stage: finalize / download ──────────────────────────────────────────
-    def finalize(self) -> dict:
-        self.obs.observe("Session", "Return finalized",
-                         "Form 1040 assembled and ready for download.", conf=1.0)
-        self.stage = Stage.DOWNLOAD
-        return self.snapshot(
-            agent={"text": "Your return is ready to file.",
-                   "sub": "Download a copy below, or ask me anything about it."},
-            result=self.result_payload(),
-        )
-
-    # ── command bar (guardrail behavior) ────────────────────────────────────
-    def command(self, raw: str) -> dict:
-        raw = (raw or "").strip()
-        if not raw:
-            return self.snapshot()
-        import re
-        on_topic = bool(re.search(
-            r"(refund|owe|balance|tax|withheld|deduction|wage|status|1040|file|income)",
-            raw, re.IGNORECASE))
-        r = self.result
-        if on_topic and r is not None:
-            p = self.result_payload()
-            if re.search(r"refund|owe|balance|get back|back", raw, re.IGNORECASE):
-                agent = {"text": (f"You’re getting {p['outcomeAmount']} back." if p["isRefund"]
-                                  else f"You owe {p['outcomeAmount']}."),
-                         "sub": f"Line {'34' if p['isRefund'] else '37'} on your 1040."}
-            elif re.search(r"deduction", raw, re.IGNORECASE):
-                agent = {"text": f"Standard deduction of {_money(r.line_12_standard_deduction)} (line 12).",
-                         "sub": f"{r.filing_status_label}, 2025."}
-            else:
-                agent = {"text": f"Total tax is {_money(r.line_24_total_tax)} on "
-                                 f"{_money(r.line_15_taxable_income)} taxable income.",
-                         "sub": "Ask about your refund, deduction, or withholding."}
-            return self.snapshot(user_echo=raw, agent=agent)
-        if on_topic:
-            return self.snapshot(user_echo=raw,
-                                 agent={"text": "Let’s finish your return first — then I can answer that."})
-        # off-topic -> decline + toast + guardrail observation
-        self.obs.observe("Guardrail", "Out-of-scope request",
-                         f"“{raw}” declined. Assistant is limited to federal 1040 preparation.",
-                         conf=0.99, flag=True)
-        return self.snapshot(
-            user_echo=raw,
-            agent={"text": "That’s outside what I do.",
-                   "sub": "I only prepare a U.S. federal Form 1040 from your W-2."},
-            toast="Off-topic request declined — logged to the decision trail.",
-        )
 
     def reset(self) -> None:
         self.__init__(self.session_id, self.tools.output_dir)

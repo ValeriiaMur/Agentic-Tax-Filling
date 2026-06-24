@@ -9,7 +9,7 @@ at runtime:
 
 | Pillar | Where it lives | How it's enforced (not just "in the prompt") |
 |---|---|---|
-| **Chat loop** | `app/agent.py`, `app/conversation.py` | A LangGraph state machine runs once per user turn; `SessionState` carries W-2 data, filing status, the question budget, and the result across turns. |
+| **Chat loop** | `app/conversation.py`, `app/agent.py` | `TaxSession` carries W-2 data, filing status, the question budget, and the result across turns — one `message(text)` call per turn. A LangGraph pipeline runs the compute→fill tools. |
 | **Tools** | `app/tools.py` | Real actions via a `ToolRegistry`: `extract_w2`, `compute_1040`, `fill_1040_pdf`. The last writes the official IRS PDF you download. |
 | **Guardrails** | `app/guardrails.py` | Hard 5-question budget (`QuestionBudget`), scope/decline classifier, deterministic filing-status parsing, and W-2 validation — all in code. |
 | **Observation** | `app/observability.py` | Every decision, tool call, result, and guardrail is emitted as a structured event, streamed to the UI's right-hand **Observation trail** and to logs. |
@@ -30,19 +30,20 @@ table — e.g. taxable income $26,250 → Single **$2,915**, MFJ **$2,676**, HOH
 pip install -r requirements.txt && uvicorn app.server:app --reload --port 8000
 ```
 
-Then open <http://localhost:8000>, click **sample W-2** (or paste
-`Box 1 wages 42000, Box 2 withholding 4200`), answer the filing-status and
-dependents questions, and download the completed 1040.
+Then open <http://localhost:8000>, drop in a W-2 (or click **Use a sample W-2**,
+or just type `Box 1 wages 42000, Box 2 withholding 4200`), reply to the
+filing-status and dependents questions in plain language, and download the
+completed 1040. The right-hand panel shows the live observation trail.
 
-No API key is required for the core flow (W-2 via paste/form + full computation +
-PDF). Set `ANTHROPIC_API_KEY` to enable **Claude vision** for W-2 image/PDF upload
-and (optionally, `USE_LLM_PHRASING=1`) warm rephrasing.
+No API key is required for the core flow (W-2 via paste/sample + full computation
++ PDF). Set `ANTHROPIC_API_KEY` to enable **Claude vision** for W-2 image/PDF
+upload (`VISION_MODEL` defaults to `claude-haiku-4-5`).
 
 ### Run the tests
 
 ```bash
 pip install -r requirements.txt pytest
-pytest -q          # 56 tests: tax-table accuracy, CTC/est, guardrails, PDF fill, E2E
+pytest -q          # 57 tests: tax-table accuracy, CTC, guardrails, PDF fill, E2E
 ```
 
 ---
@@ -60,30 +61,35 @@ The same `Procfile` works on Render, Fly.io, or any host that injects `$PORT`.
 
 ---
 
-## Interface — Malleable UI
+## Interface
 
-The front end (`static/index.html`, vanilla JS) is a 1:1 build of the **Malleable
-UI** design: a near-white surface, a single iris accent, an ambient canvas "blob"
-that breathes per stage, spring-based "crystallize" motion, and a **Decision
-Trail** drawer that exposes every observation, rule, calculation, and guardrail
-the agent used. Every figure shown — W-2 boxes, the five questions, the computed
-1040, the trail — is fetched from the backend; nothing is hardcoded in the browser.
+A deliberately **minimal web chat** (`static/index.html`, vanilla JS) — the brief
+says UI polish isn't judged, so effort went to the harness. A single chat column
+(drag-and-drop W-2, a "Use a sample W-2" link, and a free-text composer) with a
+**live Observation trail** panel on the right that shows every phase, decision,
+tool call, and guardrail as it happens. The browser holds no tax logic — every
+figure comes from the backend.
 
 ## How it works
 
-```
-idle → upload → processing → confirm → questions×5 → processing → review → download
+It's a natural free-text conversation, not a click-through of buttons. The user
+types; the agent reads intent **deterministically in code** (negation-aware
+affirmation, filing-status and dependent parsing), so the LLM never drives the
+flow or computes a number.
 
-last answer ─▶ [LangGraph]  compute (compute_1040) ─▶ finalize (fill_1040_pdf)
-                                                         → downloadable IRS PDF
+```
+await_w2 → confirm_w2 → filing_status → dependents → complete
+                                              │
+                                   [LangGraph] compute (compute_1040)
+                                              └▶ finalize (fill_1040_pdf) → IRS PDF
 ```
 
-Five plain-language questions (filing status · dependents · other income ·
-deduction · estimated payments) — the hard ceiling. Identity comes from the W-2.
-Dependents apply the 2025 Child Tax Credit (capped at tax owed); estimated
-payments add to line 26; choosing "itemized" or declaring non-W-2 income each
-logs a guardrail and the agent explains the fallback. A blurry-photo path flags
-Box 1 for human verification before proceeding.
+Three core questions (confirm the W-2 figures · filing status · dependents) under
+a hard 5-question budget — the two spare turns absorb a correction or a
+clarification, and if the budget is hit the agent assumes a safe default and says
+so rather than looping. Identity comes from the W-2; dependents apply the 2025
+Child Tax Credit (capped at tax owed). After completion the user can still ask
+about the result or change an answer, and the return recomputes.
 
 ## Project layout
 
@@ -93,16 +99,16 @@ app/
   tax_engine.py       deterministic computation + IRS Tax Table method
   schemas.py          typed W2 / TaxpayerInfo / Form1040Result (validation)
   guardrails.py       budget, scope, status parsing, W-2 validation
-  w2_extract.py       Claude vision + deterministic text/paste fallback
+  w2_extract.py       Claude vision (haiku) + deterministic text/paste fallback
   pdf_fill.py         fills the official IRS f1040_2025.pdf by field map
-  observability.py    structured per-session event trail
-  conversation.py     deterministic turn policy (the agent's decisions)
+  observability.py    structured per-session event trail + phased decision trail
+  conversation.py     free-text TaxSession: deterministic turn policy + guardrails
   tools.py            ToolRegistry (observable real actions)
-  agent.py            LangGraph harness wiring the four pillars
-  server.py           FastAPI: chat, upload, events, download
+  agent.py            LangGraph compute→fill pipeline
+  server.py           FastAPI: /api/session, /message, /w2, /sample, /observations, /download
 static/index.html     minimal chat UI + live observation panel
 assets/               official IRS PDFs + generated fake sample W-2
-tests/                50 tests incl. IRS-verified tax values & full E2E
+tests/                57 tests incl. IRS-verified tax values & full E2E
 ```
 
 ## Assets (official IRS tax-year 2025 forms)

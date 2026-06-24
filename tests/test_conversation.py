@@ -1,7 +1,7 @@
-"""TDD spec for the design-aligned TaxSession flow.
+"""TDD spec for the free-text TaxSession flow.
 
-Pins the stage machine, the 5-question budget, guardrail logging, and that all
-tax figures come from the backend — driven exactly as the UI drives it.
+Pins the conversational stage machine, the 5-question budget, deterministic
+intent parsing, guardrails, and that the figures come from the backend.
 """
 
 import os
@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from app.conversation import QUESTIONS, Stage, TaxSession, build_questions
+from app.conversation import Phase, TaxSession
 
 ASSET = os.path.join(os.path.dirname(__file__), "..", "assets", "f1040_2025.pdf")
 pytestmark = pytest.mark.skipif(not os.path.exists(ASSET), reason="1040 template missing")
@@ -19,89 +19,90 @@ def _session():
     return TaxSession("t", tempfile.mkdtemp())
 
 
-def test_questions_sourced_from_backend_constants():
-    qs = build_questions()
-    assert len(qs) == 5
-    # the standard-deduction figures come from the 2025 tables, not the frontend
-    single = next(o for o in qs[0]["options"] if o["value"] == "single")
-    assert "$15,750" in single["sub"]
-
-
-def test_begin_moves_to_upload():
+def test_begin_greets_and_awaits_w2():
     s = _session()
-    out = s.begin()
-    assert out["stage"] == "upload"
-    assert s.stage == Stage.UPLOAD
-    assert out["obs_count"] >= 1  # Session observation logged
+    snap = s.begin()
+    assert s.phase == Phase.AWAIT_W2
+    assert "Form 1040" in snap["assistant_message"]
+    assert snap["obs_count"] >= 1  # Session observation
 
 
-def test_clean_path_full_flow_refund():
+def test_sample_moves_to_confirm():
     s = _session()
     s.begin()
-    up = s.upload(False)
-    assert up["stage"] == "confirm"
-    assert up["w2"]["rows"][0]["flagged"] is False
-    c = s.confirm()
-    assert c["stage"] == "questions" and c["question"]["id"] == "filing_status"
-    s.answer("single"); s.answer(0); s.answer("no"); s.answer("standard")
-    fin = s.answer(0)
-    assert fin["stage"] == "review"
-    assert fin["result"]["outcomeLabel"] == "Your refund"
-    assert fin["result"]["outcomeAmount"] == "$1,285"
-    assert s.budget.asked == 5
-    assert s.pdf_path and os.path.exists(s.pdf_path)
+    snap = s.load_sample()
+    assert snap["phase"] == "confirm_w2"
+    assert "42,000" in snap["assistant_message"]  # backend figure, echoed back
 
 
-def test_messy_path_flags_box1_and_logs_guardrail():
+def test_paste_figures_ingests_w2():
     s = _session()
     s.begin()
-    up = s.upload(True)
-    assert up["w2"]["confLabel"] == "needs review"
-    assert up["w2"]["rows"][0]["flagged"] is True
-    assert any(o["flag"] for o in up["observations"])  # Box 1 flagged guardrail
+    snap = s.message("Box 1 wages 42000, Box 2 withholding 4200")
+    assert snap["phase"] == "confirm_w2"
+
+
+def test_full_happy_path_refund_within_budget():
+    s = _session()
+    s.begin(); s.load_sample()
+    s.message("yes that's right")          # confirm
+    s.message("single")                    # filing status
+    snap = s.message("no dependents")      # dependents -> compute
+    assert snap["phase"] == "complete"
+    assert snap["pdf_ready"] is True
+    assert snap["result"]["outcomeAmount"] == "$1,285"
+    assert s.budget.asked <= 5
+    assert os.path.exists(s.pdf_path)
+
+
+def test_filing_status_changes_deduction():
+    s = _session()
+    s.begin(); s.load_sample()
+    s.message("correct")
+    s.message("married filing jointly")
+    snap = s.message("none")
+    lines = {l["line"]: l["value"] for l in snap["result"]["lines"]}
+    assert lines["12"] == "$31,500"        # MFJ standard deduction
+
+
+def test_w2_correction_during_confirm():
+    s = _session()
+    s.begin(); s.load_sample()
+    snap = s.message("no, box 1 is 50000")
+    assert "50,000" in snap["assistant_message"]
+    assert s.w2["box1_wages"] == 50000
 
 
 def test_dependents_apply_child_tax_credit():
     s = _session()
-    s.begin(); s.upload(False); s.confirm()
-    s.answer("single"); s.answer(2); s.answer("no"); s.answer("standard")
-    fin = s.answer(0)
-    lines = {l["line"]: l["value"] for l in fin["result"]["lines"]}
-    assert "19" in lines  # CTC line present
-    # CTC capped at the tax (2,915) for 2 deps -> tax after credits 0
-    assert lines["22"] == "$0"
+    s.begin(); s.load_sample()
+    s.message("yes"); s.message("single")
+    snap = s.message("2 kids")
+    lines = {l["line"]: l["value"] for l in snap["result"]["lines"]}
+    assert "19" in lines                   # CTC line present
 
 
-def test_itemized_and_other_income_log_guardrails():
+def test_out_of_scope_declined_without_burning_a_question():
     s = _session()
-    s.begin(); s.upload(False); s.confirm()
-    s.answer("single"); s.answer(0); s.answer("yes"); s.answer("itemized")
-    fin = s.answer(0)
-    flagged = [o["action"] for o in fin["observations"] if o["flag"]]
-    assert "Out-of-scope income" in flagged
-    assert "Deduction method" in flagged
+    s.begin(); s.load_sample()
+    before = s.budget.asked
+    snap = s.message("should I invest in a roth ira instead?")
+    assert s.budget.asked == before
+    assert any(o["action"] == "Out-of-scope request" for o in snap["observations"])
+
+
+def test_mid_conversation_status_change_recomputes():
+    s = _session()
+    s.begin(); s.load_sample()
+    s.message("yes"); s.message("single"); s.message("no")
+    snap = s.message("actually head of household")
+    lines = {l["line"]: l["value"] for l in snap["result"]["lines"]}
+    assert lines["12"] == "$23,625"        # HoH deduction after recompute
 
 
 def test_budget_never_exceeds_five():
     s = _session()
-    s.begin(); s.upload(False); s.confirm()
-    for v in ["single", 0, "no", "standard", 0]:
-        s.answer(v)
-    assert s.budget.asked == 5
-
-
-def test_command_off_topic_declines_and_logs():
-    s = _session()
-    s.begin(); s.upload(False); s.confirm()
-    s.answer("single"); s.answer(0); s.answer("no"); s.answer("standard"); s.answer(0)
-    out = s.command("what stocks should I buy?")
-    assert out["toast"]
-    assert any(o["action"] == "Out-of-scope request" for o in out["observations"])
-
-
-def test_command_on_topic_answers_from_result():
-    s = _session()
-    s.begin(); s.upload(False); s.confirm()
-    s.answer("single"); s.answer(0); s.answer("no"); s.answer("standard"); s.answer(0)
-    out = s.command("what's my refund?")
-    assert "$1,285" in out["agent"]["text"]
+    s.begin(); s.load_sample()
+    for m in ["huh", "what", "no", "maybe", "single", "none", "ok"]:
+        s.message(m)
+    assert s.budget.asked <= 5
