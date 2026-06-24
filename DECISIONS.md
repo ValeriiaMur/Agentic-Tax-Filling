@@ -44,13 +44,24 @@ that declines investing/tax-advice/off-task asks *without* spending a question.
 by the LLM. (4) **W-2 validation** (wages required, withholding-over-wages
 flagged, etc.) with a graceful retry. Pydantic models validate at every boundary.
 
-**Conversation design — 3 core questions, warm tone.** Identity comes from the
-W-2, so the agent only needs: confirm the W-2 figures → filing status →
-dependents. That leaves headroom under the 5-question cap for a clarification if
-an answer is ambiguous. Messages are written warm and human in the policy itself;
-Claude can rephrase them further when enabled, but must preserve every number.
+**Conversation design — 5 questions, warm tone.** Identity comes from the W-2,
+so after confirming the figures the agent asks exactly five plain-language
+questions: filing status → dependents → other income → deduction → estimated
+payments. The 5-question budget is the hard ceiling, counted in code. Two of the
+questions double as guardrails: declaring non-W-2 income or choosing "itemized"
+each logs a guardrail and the agent explains the fallback. Messages are written
+warm and human in the policy itself; Claude can rephrase them further when
+enabled (`USE_LLM_PHRASING=1`), but must preserve every number.
 
-**State & sessions — in-memory per session.** A `dict` of `session_id → TaxAgent`.
+**Frontend — Malleable UI, built 1:1.** `static/index.html` (vanilla JS, no build
+step) reproduces the supplied design: near-white surface, single iris accent,
+ambient canvas "blob" that breathes per stage, spring "crystallize" motion, and a
+Decision Trail drawer. The design tokens are reused verbatim. Critically, **no
+data is hardcoded in the browser** — the W-2 figures, the five questions (with
+their deduction amounts), the computed 1040, and the trail are all fetched from
+the backend, keeping tax math server-side per the accuracy rule.
+
+**State & sessions — in-memory per session.** A `dict` of `session_id → TaxSession`.
 Simplest thing that demonstrates the loop for a single-instance prototype; a
 production build would use a shared store. PDFs are written to an output dir.
 
@@ -63,16 +74,20 @@ can't drift from reality. (LangSmith tracing can be layered on via env vars.)
 **Hosting — Railway** (free, Git-push deploy). `railway.json` + `Procfile` bind
 to `$PORT`; the same setup runs on Render/Fly. Health check at `/healthz`.
 
-**Testing — 50 tests, TDD.** Tax-table accuracy (official IRS values), guardrails,
-PDF field round-trip, and a full agent **end-to-end** test (fake W-2 in →
-downloadable 1040 out) that runs offline with no LLM key.
+**Testing — 56 tests, TDD.** Tax-table accuracy (official IRS values), CTC and
+estimated-payment math, guardrails, PDF field round-trip, and full session
+**end-to-end** tests (sample W-2 in → downloadable 1040 out, clean + messy paths)
+that run offline with no LLM key.
 
 ## Documented limitations (scope, on purpose)
 
-- Single W-2, standard deduction, wage income, federal withholding only. No
-  credits (EIC/CTC), itemizing, or non-wage income — correct for the target
-  profile; those lines stay at zero.
-- Filing status is selectable (single, MFJ, MFS, HOH, QSS) and changes the
-  deduction/brackets; spouse/dependents are captured minimally. A dependent count
-  is recorded but does not yet compute CTC (a clean extension point).
+- Single W-2; wage income + federal withholding only. No EIC, no itemizing
+  (an itemized choice falls back to the standard deduction), no non-W-2 income
+  (declaring it logs a guardrail and excludes it) — correct for the target profile.
+- Dependents apply the 2025 Child Tax Credit ($2,200/child, capped at tax owed);
+  estimated payments add to line 26. Filing status is selectable (single, MFJ,
+  MFS, HOH, QSS) and changes the deduction/brackets.
+- Tax is computed with the IRS 2025 Tax Table (more accurate than a raw bracket
+  formula for incomes under $100k); a few dollars may differ from a continuous-
+  bracket estimate, by design.
 - In-memory state means sessions reset on redeploy — fine for a demo.

@@ -95,6 +95,33 @@ def test_low_withholding_produces_amount_owed():
     assert r.line_35a_refund == 0
 
 
+def test_child_tax_credit_caps_at_tax():
+    w2 = W2(box1_wages=42_000, box2_federal_withholding=4_200)
+    info = TaxpayerInfo(filing_status=T.SINGLE, num_dependents=2)
+    r = compute_1040(w2, info)
+    # tax 2,915; 2 deps -> $4,400 CTC but capped at the tax owed
+    assert r.line_19_ctc == 2_915
+    assert r.line_22_tax_after_credits == 0
+    assert r.line_35a_refund == 4_200  # all withholding refunded
+
+
+def test_one_dependent_partial_credit():
+    w2 = W2(box1_wages=42_000, box2_federal_withholding=4_200)
+    info = TaxpayerInfo(filing_status=T.SINGLE, num_dependents=1)
+    r = compute_1040(w2, info)
+    assert r.line_19_ctc == 2_200            # one child, under the tax
+    assert r.line_22_tax_after_credits == 715  # 2,915 - 2,200
+
+
+def test_estimated_payments_added_to_total_payments():
+    w2 = W2(box1_wages=42_000, box2_federal_withholding=4_200)
+    info = TaxpayerInfo(filing_status=T.SINGLE, est_payments=1_500)
+    r = compute_1040(w2, info)
+    assert r.line_26_est_payments == 1_500
+    assert r.line_33_total_payments == 5_700      # 4,200 + 1,500
+    assert r.line_35a_refund == 2_785             # 5,700 - 2,915
+
+
 def test_invalid_filing_status_rejected():
     with pytest.raises(ValueError):
         TaxpayerInfo(filing_status="bogus")

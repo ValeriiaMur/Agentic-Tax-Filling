@@ -42,7 +42,7 @@ and (optionally, `USE_LLM_PHRASING=1`) warm rephrasing.
 
 ```bash
 pip install -r requirements.txt pytest
-pytest -q          # 50 tests: tax-table accuracy, guardrails, PDF fill, agent E2E
+pytest -q          # 56 tests: tax-table accuracy, CTC/est, guardrails, PDF fill, E2E
 ```
 
 ---
@@ -60,20 +60,30 @@ The same `Procfile` works on Render, Fly.io, or any host that injects `$PORT`.
 
 ---
 
-## How it works (one turn)
+## Interface — Malleable UI
+
+The front end (`static/index.html`, vanilla JS) is a 1:1 build of the **Malleable
+UI** design: a near-white surface, a single iris accent, an ambient canvas "blob"
+that breathes per stage, spring-based "crystallize" motion, and a **Decision
+Trail** drawer that exposes every observation, rule, calculation, and guardrail
+the agent used. Every figure shown — W-2 boxes, the five questions, the computed
+1040, the trail — is fetched from the backend; nothing is hardcoded in the browser.
+
+## How it works
 
 ```
-user message ─▶ [LangGraph]
-                  converse ── advance(SessionState)        # policy + guardrails
-                     │         emits observation events
-                     ├─▶ END                               # mid-conversation
-                     └─▶ finalize ── fill_1040_pdf tool    # once result computed
-                                     → downloadable PDF
+idle → upload → processing → confirm → questions×5 → processing → review → download
+
+last answer ─▶ [LangGraph]  compute (compute_1040) ─▶ finalize (fill_1040_pdf)
+                                                         → downloadable IRS PDF
 ```
 
-The conversation needs at most three questions (confirm W-2 → filing status →
-dependents); identity comes from the W-2. The 5-question budget is a hard ceiling
-checked in code on every turn.
+Five plain-language questions (filing status · dependents · other income ·
+deduction · estimated payments) — the hard ceiling. Identity comes from the W-2.
+Dependents apply the 2025 Child Tax Credit (capped at tax owed); estimated
+payments add to line 26; choosing "itemized" or declaring non-W-2 income each
+logs a guardrail and the agent explains the fallback. A blurry-photo path flags
+Box 1 for human verification before proceeding.
 
 ## Project layout
 
