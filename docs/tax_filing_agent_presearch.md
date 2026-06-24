@@ -45,7 +45,7 @@
 - **Human-in-the-loop requirements?**
   The user is the human in the loop: the agent should confirm the key extracted W-2 figures and the chosen filing status back to the user before producing the form. *Inferred:* a brief "here's what I've got, look right?" confirmation rather than blind auto-fill.
 - **Audit/compliance needs?**
-  No real compliance regime (educational, no e-filing). The relevant "audit" need is the **Observation pillar**: a visible trail of decisions, tool calls, and computed values a judge can inspect. *Out of scope* — formal regulatory audit/retention.
+  No real compliance regime (educational, no e-filing). The relevant "audit" need is the **Observability pillar**: a visible trail of decisions, tool calls, and computed values a judge can inspect. *Out of scope* — formal regulatory audit/retention.
 
 ### 4. Team & Skill Constraints
 
@@ -108,7 +108,7 @@
 - **Cost tracking requirements?**
   A per-session token/cost counter is included (cheap to add, proves free-tier viability and adds to the observability story). Exposed in the same observation panel.
 - **Implementation note (enforcement):**
-  Observation is implemented as a structured event log written by the agent/tool layer (append-only per session in state), then both (a) streamed to the UI panel and (b) mirrored to LangSmith. Because the events are emitted by the code that actually runs the tools and computes the math, the trail cannot drift from what the agent really did.
+  Observability is implemented as a structured event log written by the agent/tool layer (append-only per session in state), then both (a) streamed to the UI panel and (b) mirrored to LangSmith. Because the events are emitted by the code that actually runs the tools and computes the math, the trail cannot drift from what the agent really did.
 
 ### 9. Eval Approach — *PRIORITY (accuracy)*
 
@@ -210,9 +210,9 @@
 
 ### Summary of the four required pillars (mapped)
 
-- **Chat loop** → LangGraph cyclic graph carrying per-session state across turns (§5, §1).
-- **Tools** → typed `extract_w2`, `compute_1040`, `fill_1040_pdf`; the last produces the downloadable return (§7).
-- **Guardrails** → ≤5-question budget enforced in state, deterministic math outside the model, scope/refusal rules, W-2 validation with form fallback (§3, §10, §12).
-- **Observation** → in-app, judge-visible trail of decisions, tool calls, and computed line values, surfaced in the UI not just logs (§8, §3).
+- **Chat / Loop** → LangGraph cyclic graph carrying per-session state across turns; drives reasoning until the task is done (§5, §1).
+- **Tools** → typed `extract_w2`, `compute_1040`, `fill_1040_pdf`; lets the model read data and change the outside world, and the last produces the downloadable return (§7).
+- **Guardrails** → constrains inputs, outputs, and actions to safe bounds: ≤5-question budget enforced in state, deterministic math outside the model, scope/refusal rules, W-2 validation with form fallback (§3, §10, §12).
+- **Observability** → records what happened: in-app, judge-visible trail of decisions, tool calls, and computed line values, surfaced in the UI not just logs (§8, §3).
 
 *This is an educational/hackathon exercise, not tax advice, and not for real filings or e-filing.*
