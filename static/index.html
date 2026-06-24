@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>2025 Tax-Filing Assistant</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --txt:#e7e9ee; --muted:#9aa3b2;
+          --accent:#4f9cf9; --user:#22303f; --bot:#1c2330; --ok:#3fb950; --warn:#e3b341; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex;
+           align-items:center; gap:10px; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .tag { font-size:11px; color:var(--muted); border:1px solid var(--line);
+                padding:2px 8px; border-radius:99px; }
+  .wrap { display:grid; grid-template-columns: 1fr 380px; gap:0; height:calc(100vh - 53px); }
+  .chat { display:flex; flex-direction:column; border-right:1px solid var(--line); }
+  .msgs { flex:1; overflow-y:auto; padding:18px; }
+  .msg { max-width:78%; padding:10px 14px; border-radius:12px; margin:8px 0; line-height:1.45;
+         white-space:pre-wrap; font-size:14px; }
+  .msg.user { background:var(--user); margin-left:auto; border-bottom-right-radius:3px; }
+  .msg.bot { background:var(--bot); border:1px solid var(--line); border-bottom-left-radius:3px; }
+  .composer { border-top:1px solid var(--line); padding:12px; display:flex; gap:8px; }
+  .composer input[type=text]{ flex:1; background:var(--panel); border:1px solid var(--line);
+        color:var(--txt); padding:11px 12px; border-radius:10px; font-size:14px; outline:none; }
+  button { background:var(--accent); color:#04101f; border:0; padding:11px 16px; border-radius:10px;
+           font-weight:600; cursor:pointer; font-size:14px; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); font-weight:500; }
+  .bar { padding:8px 12px; border-top:1px solid var(--line); display:flex; gap:8px; align-items:center;
+         flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .pill { border:1px solid var(--line); border-radius:99px; padding:3px 9px; }
+  .dl { background:var(--ok); color:#04130a; text-decoration:none; padding:9px 14px; border-radius:10px;
+        font-weight:600; font-size:13px; display:none; }
+  /* observation panel */
+  .obs { display:flex; flex-direction:column; background:var(--panel); }
+  .obs h2 { font-size:13px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line);
+            text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .events { flex:1; overflow-y:auto; padding:8px 12px; font-family:ui-monospace,Menlo,monospace;
+            font-size:11.5px; }
+  .ev { padding:7px 9px; border-left:3px solid var(--line); margin:6px 0; background:#10131a;
+        border-radius:0 8px 8px 0; }
+  .ev .k { font-weight:700; }
+  .ev.tool_call .k{ color:var(--accent);} .ev.tool_result .k{ color:var(--ok);}
+  .ev.guardrail .k{ color:var(--warn);} .ev.decision .k{ color:#c0a8ff;} .ev.error .k{ color:#ff6b6b;}
+  .ev .t { color:var(--muted); } .ev .d { color:#cfd6e2; display:block; margin-top:2px; word-break:break-word; }
+  .hint { color:var(--muted); font-size:12px; padding:0 18px 10px; }
+  a.link { color:var(--accent); cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>2025 Tax-Filing Assistant</h1>
+  <span class="tag">Form 1040 · educational demo</span>
+</header>
+<div class="wrap">
+  <div class="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="hint">Tip: try the <a class="link" id="sample">sample W-2</a>, or type e.g. “Box 1 wages 42000, Box 2 withholding 4200”.</div>
+    <div class="bar">
+      <span class="pill" id="phase">phase: —</span>
+      <span class="pill" id="budget">questions: 0 / 5</span>
+      <label class="pill" style="cursor:pointer">📎 Upload W-2
+        <input id="file" type="file" accept="image/*,application/pdf" style="display:none" />
+      </label>
+      <a class="dl" id="dl" href="#">⬇ Download 1040</a>
+    </div>
+    <div class="composer">
+      <input id="text" type="text" placeholder="Type your message…" autocomplete="off" />
+      <button id="send">Send</button>
+    </div>
+  </div>
+  <div class="obs">
+    <h2>Observation trail · what the agent did</h2>
+    <div class="events" id="events"></div>
+  </div>
+</div>
+<script>
+let SID = null;
+
+function el(t, c, html){ const e=document.createElement(t); if(c)e.className=c; if(html!=null)e.innerHTML=html; return e; }
+function addMsg(text, who){ const m=el('div','msg '+who); m.textContent=text; document.getElementById('msgs').appendChild(m);
+  m.scrollIntoView({behavior:'smooth'}); }
+function setStatus(s){ if(s.phase) document.getElementById('phase').textContent='phase: '+s.phase;
+  if(s.questions_asked!=null) document.getElementById('budget').textContent='questions: '+s.questions_asked+' / 5';
+  const dl=document.getElementById('dl'); if(s.pdf_ready){ dl.style.display='inline-block'; dl.href='/api/download/'+SID; } }
+function renderEvents(events){ if(!events) return; const box=document.getElementById('events'); box.innerHTML='';
+  events.forEach(e=>{ const d=el('div','ev '+e.kind);
+    const data = e.data && Object.keys(e.data).length ? JSON.stringify(e.data) : '';
+    d.innerHTML='<span class="k">'+e.kind+'</span> <span class="t">'+e.human_ts+' · #'+e.seq+'</span><span class="d">'+e.label+(data?' '+escapeHtml(data):'')+'</span>';
+    box.appendChild(d); }); box.scrollTop=box.scrollHeight; }
+function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function start(){ const r=await fetch('/api/session',{method:'POST'}); const j=await r.json();
+  SID=j.session_id; addMsg(j.greeting,'bot'); }
+
+async function send(){ const inp=document.getElementById('text'); const t=inp.value.trim(); if(!t||!SID) return;
+  addMsg(t,'user'); inp.value='';
+  const r=await fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({session_id:SID,message:t})}); const j=await r.json();
+  addMsg(j.assistant_message,'bot'); setStatus(j); renderEvents(j.events); }
+
+async function uploadFile(file){ const fd=new FormData(); fd.append('session_id',SID); fd.append('file',file);
+  addMsg('📎 '+file.name,'user');
+  const r=await fetch('/api/w2',{method:'POST',body:fd}); const j=await r.json();
+  addMsg(j.assistant_message,'bot'); setStatus(j); renderEvents(j.events); }
+
+async function useSample(){ const resp=await fetch('/api/sample-w2'); const blob=await resp.blob();
+  const f=new File([blob],'sample_w2.png',{type:'image/png'}); uploadFile(f); }
+
+document.getElementById('send').onclick=send;
+document.getElementById('text').addEventListener('keydown',e=>{ if(e.key==='Enter') send(); });
+document.getElementById('file').addEventListener('change',e=>{ if(e.target.files[0]) uploadFile(e.target.files[0]); });
+document.getElementById('sample').onclick=useSample;
+start();
+</script>
+</body>
+</html>

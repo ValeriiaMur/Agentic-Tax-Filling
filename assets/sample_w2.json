@@ -1,0 +1,9 @@
+{
+  "employee_name": "Jordan A Rivera",
+  "employee_ssn": "123-45-6789",
+  "employer_name": "Brightline Coffee Roasters LLC",
+  "box1_wages": 42000.0,
+  "box2_federal_withholding": 4200.0,
+  "box16_state_wages": 42000.0,
+  "box17_state_withholding": 1180.0
+}

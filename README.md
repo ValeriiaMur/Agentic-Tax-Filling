@@ -1,68 +1,110 @@
-# Agentic Tax-Filing Assistant
+# Agentic Tax-Filing Assistant — 2025 Form 1040
 
-A small agentic system that helps a person file a U.S. federal income tax return
-(**2025 Form 1040**) by chatting with them. A user shows up with a single W-2
-(~$40,000/year), has a short, friendly conversation, and walks away with a
-completed 2025 Form 1040 they can download.
+A small **agentic harness** that helps a single-W-2 wage earner (~$40k) file a
+U.S. federal **2025 Form 1040** through a warm, ≤5-question chat — and hands back
+the completed, downloadable IRS PDF.
 
-Built for a hackathon challenge. This is an **educational prototype**, not tax
-advice — it uses **fake test data only**, performs no e-filing, and handles no
-real PII.
+It's built to demonstrate four harness pillars, each enforced in code and visible
+at runtime:
 
-## The four pillars
+| Pillar | Where it lives | How it's enforced (not just "in the prompt") |
+|---|---|---|
+| **Chat loop** | `app/agent.py`, `app/conversation.py` | A LangGraph state machine runs once per user turn; `SessionState` carries W-2 data, filing status, the question budget, and the result across turns. |
+| **Tools** | `app/tools.py` | Real actions via a `ToolRegistry`: `extract_w2`, `compute_1040`, `fill_1040_pdf`. The last writes the official IRS PDF you download. |
+| **Guardrails** | `app/guardrails.py` | Hard 5-question budget (`QuestionBudget`), scope/decline classifier, deterministic filing-status parsing, and W-2 validation — all in code. |
+| **Observation** | `app/observability.py` | Every decision, tool call, result, and guardrail is emitted as a structured event, streamed to the UI's right-hand **Observation trail** and to logs. |
 
-Every harness has the same four responsibilities. Here's how each one is realized
-in this project:
+**Accuracy:** tax is computed in plain Python (`app/tax_engine.py`), never by the
+LLM. The engine reproduces the official **IRS 2025 Tax Table** generation method
+(tax the midpoint of each $50 row), verified to the dollar against the printed
+table — e.g. taxable income $26,250 → Single **$2,915**, MFJ **$2,676**, HOH **$2,813**.
 
-| Pillar            | Responsibility                                          | How it's realized here                                                                 |
-| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **Chat / Loop**   | Drives reasoning across turns until the task is done.   | LangGraph cyclic graph carrying per-session state (extracted W-2 fields, filing status, answers, question count) across turns until the 1040 is complete. |
-| **Tools**         | Lets the model read data and change the outside world.  | Typed tools: `extract_w2` (reads the W-2), `compute_1040` (deterministic tax engine), `fill_1040_pdf` (writes the downloadable return). |
-| **Guardrails**    | Constrains inputs, outputs, and actions to safe bounds. | ≤5-question budget enforced in state; deterministic tax math kept outside the model; scope/refusal rules (no tax advice, no out-of-scope filings); W-2 validation with structured-form fallback. |
-| **Observability** | Records what happened so you can debug and improve.     | In-app, judge-visible trail of every decision, tool call (with I/O), and computed 1040 line value — surfaced in the UI, not just logs; mirrored to LangSmith. |
+> Educational/hackathon demo with **fake data only**. Not tax advice, not a real
+> filing, no e-filing.
 
-## Stack
+---
 
-- **Backend:** Python, FastAPI, LangGraph
-- **Model:** Anthropic Claude (conversation + W-2 vision extraction)
-- **Tax math:** deterministic engine using bundled 2025 IRS parameters (never the LLM)
-- **PDF:** official 2025 IRS fillable Form 1040, populated via `pypdf` / `reportlab`
+## One-command local run
+
+```bash
+pip install -r requirements.txt && uvicorn app.server:app --reload --port 8000
+```
+
+Then open <http://localhost:8000>, click **sample W-2** (or paste
+`Box 1 wages 42000, Box 2 withholding 4200`), answer the filing-status and
+dependents questions, and download the completed 1040.
+
+No API key is required for the core flow (W-2 via paste/form + full computation +
+PDF). Set `ANTHROPIC_API_KEY` to enable **Claude vision** for W-2 image/PDF upload
+and (optionally, `USE_LLM_PHRASING=1`) warm rephrasing.
+
+### Run the tests
+
+```bash
+pip install -r requirements.txt pytest
+pytest -q          # 50 tests: tax-table accuracy, guardrails, PDF fill, agent E2E
+```
+
+---
+
+## Deploy (Railway)
+
+1. Push this repo to GitHub.
+2. In Railway: **New Project → Deploy from GitHub repo**, select it.
+3. Railway auto-detects Python (`requirements.txt`) and uses `railway.json`'s
+   start command (`uvicorn app.server:app --host 0.0.0.0 --port $PORT`).
+4. (Optional) add `ANTHROPIC_API_KEY` in **Variables** to enable image upload.
+5. Open the generated public URL. Health check: `/healthz`.
+
+The same `Procfile` works on Render, Fly.io, or any host that injects `$PORT`.
+
+---
+
+## How it works (one turn)
+
+```
+user message ─▶ [LangGraph]
+                  converse ── advance(SessionState)        # policy + guardrails
+                     │         emits observation events
+                     ├─▶ END                               # mid-conversation
+                     └─▶ finalize ── fill_1040_pdf tool    # once result computed
+                                     → downloadable PDF
+```
+
+The conversation needs at most three questions (confirm W-2 → filing status →
+dependents); identity comes from the W-2. The 5-question budget is a hard ceiling
+checked in code on every turn.
 
 ## Project layout
 
 ```
-.
-├── app/                  # Application code
-│   ├── tax_tables_2025.py  # 2025 federal parameters (single source of truth)
-│   └── ...
-├── assets/               # Official IRS tax-year 2025 forms (see below)
-├── docs/                 # Challenge brief & pre-search notes
-│   ├── requirements.md
-│   └── tax_filing_agent_presearch.md
-├── requirements.txt
-└── README.md
+app/
+  tax_tables_2025.py  official 2025 constants (std deduction, brackets)
+  tax_engine.py       deterministic computation + IRS Tax Table method
+  schemas.py          typed W2 / TaxpayerInfo / Form1040Result (validation)
+  guardrails.py       budget, scope, status parsing, W-2 validation
+  w2_extract.py       Claude vision + deterministic text/paste fallback
+  pdf_fill.py         fills the official IRS f1040_2025.pdf by field map
+  observability.py    structured per-session event trail
+  conversation.py     deterministic turn policy (the agent's decisions)
+  tools.py            ToolRegistry (observable real actions)
+  agent.py            LangGraph harness wiring the four pillars
+  server.py           FastAPI: chat, upload, events, download
+static/index.html     minimal chat UI + live observation panel
+assets/               official IRS PDFs + generated fake sample W-2
+tests/                50 tests incl. IRS-verified tax values & full E2E
 ```
 
-## Assets
+## Assets (official IRS tax-year 2025 forms)
 
-Official IRS **tax year 2025** forms, downloaded from irs.gov:
+- `assets/f1040_2025.pdf` — Form 1040 fillable PDF (the form we populate)
+- `assets/i1040gi_2025.pdf` — 1040 instructions (the 2025 Tax Table used to verify the engine)
+- `assets/fw2_2025.pdf` — blank W-2 reference
+- `assets/sample_w2.png` / `sample_w2.json` — generated **fake** W-2 + ground truth
 
-- `assets/f1040_2025.pdf` — 2025 Form 1040 (fillable PDF, the form we populate)
-- `assets/i1040gi_2025.pdf` — 2025 Form 1040 instructions (includes the 2025 Tax Table and standard deduction figures used to verify the engine)
-- `assets/fw2_2025.pdf` — 2025 Form W-2 (reference for building the realistic fake test W-2)
-
-## Local run
-
-```bash
-pip install -r requirements.txt
-# set your model key
-export ANTHROPIC_API_KEY=...
-uvicorn app.main:app --reload
-```
-
-Then open the chat in your browser.
+See `DECISIONS.md` for the key design choices and why.
 
 ## Disclaimer
 
 Educational/hackathon exercise only. Not tax advice, not for real filings, and
-not for e-filing. Test with synthetic data only.
+not for e-filing. Synthetic data only.
